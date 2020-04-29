@@ -18,7 +18,7 @@ sudo apt install libhdf5-dev
 ```
 sudo gedit ~/.bashrc
 // Add following line to .bashrc
-export ComFluSoM=~/ComFluSoM
+export TComFluSoM=~/TComFluSoM
 ```
 # How to compile and run
 - use make to compile and ./ to run.

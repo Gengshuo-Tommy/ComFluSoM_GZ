@@ -1,5 +1,5 @@
 # TComFluSoM
-TComFluSoM is an updated codes for practice from Pei's orignal ComFluSoM, see https://github.com/peizhang-cn/ComFluSoM.
+TComFluSoM is a modified version for my PhD project at University of Queensland. Original codes can be refer to https://github.com/peizhang-cn/ComFluSoM.
 
 # Methods
 - **Lattice Boltzmann Method (LBM)** for flow.

@@ -153,13 +153,6 @@ inline LBM::LBM(DnQm dnqm, CollisionModel cmodel, bool incompressible, int nx, i
     cout << "Relaxation time = " << Tau << endl;
     Nproc = 12;
 
-    // Parameters used for Guo (Flow in Porous Media)
-    Porosity = 0.1;
-    Fe       = 1.75/Porosity/sqrt(Porosity)/sqrt(150);
-    Kp       = Porosity*Porosity*Porosity/(1-Porosity)/(1-Porosity)/150;
-    c0       = 0.5 + 0.25*Porosity*Nu/Kp;
-    c1       = 0.5 * Porosity * Fe / sqrt(Kp); 
-
 	if (dnqm==D2Q9)
 	{
 		E   = {     { 0, 0, 0}, { 1, 0, 0}, { 0, 1, 0}, 
@@ -508,24 +501,6 @@ inline void LBM::CalRhoVLocalGray(int i, int j, int k)
     V[i][j][k] = V[i][j][k] / Rho[i][j][k]; //+ 0.5 * ABody[i][j][k] / Rho[i][j][k];
 }
 
-inline void LBM::CalRhoVLocalGuo(int i, int j, int k)
-{
-	Rho[i][j][k] = 0.;
-    V[i][j][k] = Vector3d::Zero();
-
-    for (int q = 0; q < Q; ++q)
-    {
-    	Rho[i][j][k]	+= F[i][j][k](q);
-    	V[i][j][k] 		+= F[i][j][k](q)*E[q];
-    }
-
-    V[i][j][k] = V[i][j][k] / Rho[i][j][k] + 0.5 * Porosity * ABody[i][j][k];
-
-    double cc  = c0*c0 + c1*V[i][j][k].norm();
-
-    V[i][j][k] = V[i][j][k]/(c0 + sqrt(cc));
-} 		
-
 inline void LBM::CalRhoV()
 {
 	// double err = 0.;
@@ -547,18 +522,6 @@ inline void LBM::CalRhoVGray()
     for (int k = 0; k <= Nz; ++k)
     {
 		CalRhoVLocalGray(i,j,k);
-    }
-}
-
-inline void LBM::CalRhoVGuo()
-{
-	// double err = 0.;
-	#pragma omp parallel for schedule(static) num_threads(Nproc)
-	for (int i = 0; i <= Nx; ++i)
-    for (int j = 0; j <= Ny; ++j)
-    for (int k = 0; k <= Nz; ++k)
-    {
-		CalRhoVLocalGuo(i,j,k);
     }
 }
 

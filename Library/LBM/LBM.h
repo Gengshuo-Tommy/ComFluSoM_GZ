@@ -54,9 +54,7 @@ public:
 	void CollideMRTLocal(int i, int j, int k);
 	void CollideMRT();
 
-	/*===================================Methods for CM =====================================================*/
 	int 							Nproc;													// Number of processors which used
-
 	double*** 						Rho;													// Fluid density
 	double****	 					G;														// Flag of lattice type
 	vector<size_t>***		 		Flag;													// Flag of lattice type
@@ -65,17 +63,7 @@ public:
 	Vector3d***						ExForce;												// External force
 	double***                       Ns;                                                     // Solid Fraction
 
-    //================================== Flow in Porous Media  ================================================//
-    //==================================   (Force Term)(Guo)   ================================================//
-	double                          Fe;
-	double                          Kp;
-	double                          c0;
-	double                          c1;
-	double                          Porosity;
-	void CalRhoVGuo();
-	void CalRhoVLocalGuo(int i, int j, int k);
-	void CollideSRTGuo(); 
-	void BodyForceLocalGuo(int i, int j, int k, Vector3d force);
+    //================================== Flow in Porous Media  ==================================================//
 	//================================== (Partial Bounce Back)(Walsh)============================================//
 	void CollideSRTWalsh();
 	void StreamWalsh();
@@ -83,7 +71,7 @@ public:
     //================================== (Partial Bounce Back)(Zhu)  ============================================//
     void CollideSRTZhu();
 	void BodyForceLocalZhu(int i, int j, int k, Vector3d force);
-	//================================== (Partial Bounce Back)(Proposed)  ======================================//
+	//================================== (Partial Bounce Back)(Gray) ============================================//
 	void StreamGray();
 	void CalRhoVLocalGray(int i, int j, int k);
 	void CalRhoVGray();
@@ -618,27 +606,6 @@ inline void LBM::BodyForceLocalZhu(int i, int j, int k, Vector3d force)
 	}
 }
 
-inline void LBM::BodyForceLocalGuo(int i, int j, int k, Vector3d force)
-{
-	double     uf  = V[i][j][k].dot(force);
-	for (int q=0; q<Q; ++q)
-	{
-		double ef  = E[q].dot(force);
-		double ue  = E[q].dot(V[i][j][k]);
-
- 		Ft[i][j][k](q) += W[q]*Rho[i][j][j]*(1-0.5*Omega)*(1.5*ef + 4.5*ue*uf/Porosity - 1.5*uf*uf/Porosity);
-
-		if (Ft[i][j][k](q)<0.)
-		{
-			cout << "negative after force term!" << endl;
-			cout << "force= " << force.transpose() << endl;
-			cout << i << " " << j << " " << k << endl;
-			cout << "vel= " << V[i][j][k].transpose() << endl;
-			abort();
-		}
-	}
-}
-
 inline void LBM::BodyForceLocalOpenMP(int i, int j, int k, Vector3d force)
 {
 	for (int q=0; q<Q; ++q)
@@ -692,22 +659,6 @@ inline void LBM::CollideSRTGray()
 		CollideSRTLocal(i, j, k);
 	    Vector3d bf = ABody[i][j][k] + ExForce[i][j][k];
     	BodyForceLocalGray(i, j, k, bf);
-	    ExForce[i][j][k] = Vector3d::Zero();
-    }
-}
-
-inline void LBM::CollideSRTGuo()
-{
-    // cout << "CollideMRT" << endl;
-    #pragma omp parallel for schedule(static) num_threads(Nproc)
-    for (int i=0; i<=Nx; i++)
-    for (int j=0; j<=Ny; j++)
-    for (int k=0; k<=Nz; k++)
-    {
-		CollideSRTLocal(i, j, k);
-		double   vnorm = V[i][j][k].norm();
-	    Vector3d bf = -Porosity*Nu*V[i][j][k]/Kp - Porosity*Fe*vnorm*V[i][j][k]/sqrt(Kp) + Porosity*ABody[i][j][k] + ExForce[i][j][k];
-    	BodyForceLocalGuo(i, j, k, bf);
 	    ExForce[i][j][k] = Vector3d::Zero();
     }
 }

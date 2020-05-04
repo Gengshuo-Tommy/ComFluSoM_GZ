@@ -5,7 +5,7 @@ int main(int argc, char* argv[])
 	bool   incompress               = false;
 	double nuphysical               = 0.5;                      // (m^2)/s
 	double rhophysical              = 1000;                     // kg/m^3
-	Vector3d forcephysical (0, 0.1, 0);                         // m/(s^2)
+	Vector3d forcephysical (0, 0.5, 0);                         // m/(s^2)
 	Vector3d initvphysical (0,0,0);                             // m/s
  
 	int nx = 51;
@@ -24,21 +24,20 @@ int main(int argc, char* argv[])
 	}
 
 	//Set Solid Fraction
-	for (int i = 0; i<=51; ++i)
+	for (int i = 1; i<=50; ++i)
 	for (int j = 0; j<=51; ++j)
 	{
 		x->Ns[i][j][0]= 0.8/1.8;
 	}
 
-	for (int i = 0; i<=51; ++i)
+	for (int i = 1; i<=50; ++i)
 	for (int j = 52; j<=101; ++j)
 	{
 		x->Ns[i][j][0]= 0.2/1.2;
 	}
 
-
 	// Set Boundary Condition
-	for (int j=0; j<=101; ++i)
+	for (int j=0; j<=101; ++j)
 	{
 		Vector3i h(0,j,0);
 		Vector3i n(51,j,0);
@@ -46,7 +45,7 @@ int main(int argc, char* argv[])
 		x->Lwall.push_back(n);
 	}
 
-	for (int step = 1; step <=75; ++step)
+	for (int step = 1; step <=1000; ++step)
 	{			
 
 		x->CalRhoVGray();                            // calculate velocity
@@ -58,11 +57,9 @@ int main(int argc, char* argv[])
 		x->ApplyWall();
 
 		cout<<"Time Step "<<step<<endl;
-		cout<<x->V[10][0][0].transpose()<<endl;
-		cout<<x->V[10][20][0].transpose()<<endl;
-		cout<<x->V[10][51][0].transpose()<<endl;
-		cout<<x->V[10][82][0].transpose()<<endl;
-		cout<<x->V[10][103][0].transpose()<<endl;
+		cout<<x->V[25][25][0].transpose()<<endl;
+		cout<<x->V[25][50][0].transpose()<<endl;
+		cout<<x->V[25][75][0].transpose()<<endl;
 		x->WriteFileH5(step,1);
 	}
 

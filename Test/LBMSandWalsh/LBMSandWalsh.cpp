@@ -27,19 +27,19 @@ int main(int argc, char* argv[])
 	for (int i = 0; i<=20; ++i)
 	for (int j = 1; j<=34; ++j)
 	{
-		x->Ns[i][j][0]= 0.8;
+		x->Ns[i][j][0]= 0.1;
 	}
 
 	for (int i = 0; i<=20; ++i)
 	for (int j = 35; j<=68; ++j)
 	{
-		x->Ns[i][j][0]= 0.1;
+		x->Ns[i][j][0]= 0;
 	}
 
 	for (int i = 0; i<=20; ++i)
 	for (int j = 69; j<=102; ++j)
 	{
-		x->Ns[i][j][0]= 0.8;
+		x->Ns[i][j][0]= 0.1;
 	}
 
 	// Set Boundary Condition
@@ -51,7 +51,7 @@ int main(int argc, char* argv[])
 		x->Lwall.push_back(n);
 	}
 
-	for (int step = 1; step <=2000; ++step)
+	for (int step = 1; step <=75; ++step)
 	{			
 
 		x->CalRhoVGray();                            // calculate velocity

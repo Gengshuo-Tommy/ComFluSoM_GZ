@@ -5,11 +5,11 @@ int main(int argc, char* argv[])
 	bool   incompress               = false;
 	double nuphysical               = 0.5;                      // (m^2)/s
 	double rhophysical              = 1000;                     // kg/m^3
-	Vector3d forcephysical (0, 0.1, 0);                         // m/(s^2)
+	Vector3d forcephysical (0.1, 0, 0);                         // m/(s^2)
 	Vector3d initvphysical (0,0,0);                             // m/s
  
-	int nx = 51;
-	int ny = 101;
+	int nx = 100;
+	int ny = 50;
 	int nz = 0;
 
 	// Program works  
@@ -17,52 +17,43 @@ int main(int argc, char* argv[])
 	x->Init(rhophysical,initvphysical);
 
 	// Set Driven Force
-	for (int i = 1; i<=50; ++i)
-	for (int j = 0; j<=101; ++j)
+	for (int i = 0; i<=100; ++i)
+	for (int j = 1; j<=49; ++j)
 	{
 		x->ABody[i][j][0]=forcephysical;
 	}
 
 	//Set Solid Fraction
-	for (int i = 0; i<=51; ++i)
-	for (int j = 0; j<=51; ++j)
+	for (int i = 0; i<=100; ++i)
+	for (int j = 1; j<=49; ++j)
 	{
-		x->Ns[i][j][0]= 0.8/1.8;
+		x->Ns[i][j][0]= 0.1/1.1;
 	}
-
-	for (int i = 0; i<=51; ++i)
-	for (int j = 52; j<=101; ++j)
-	{
-		x->Ns[i][j][0]= 0.2/1.2;
-	}
-
 
 	// Set Boundary Condition
-	for (int j=0; j<=101; ++i)
+	for (int i=0; i<=100; ++i)
 	{
-		Vector3i h(0,j,0);
-		Vector3i n(51,j,0);
+		Vector3i h(i,0,0);
+		Vector3i n(i,50,0);
 		x->Lwall.push_back(h);
 		x->Lwall.push_back(n);
 	}
 
-	for (int step = 1; step <=75; ++step)
+	for (int step = 1; step <=1000; ++step)
 	{			
 
 		x->CalRhoVGray();                            // calculate velocity
 		
-		x->CollideSRTZhu();
+		x->CollideSRTGray();
 
 		x->StreamGray();
 
 		x->ApplyWall();
 
 		cout<<"Time Step "<<step<<endl;
-		cout<<x->V[10][0][0].transpose()<<endl;
-		cout<<x->V[10][20][0].transpose()<<endl;
-		cout<<x->V[10][51][0].transpose()<<endl;
-		cout<<x->V[10][82][0].transpose()<<endl;
-		cout<<x->V[10][103][0].transpose()<<endl;
+		cout<<x->V[50][15][0].transpose()<<endl;
+		cout<<x->V[50][25][0].transpose()<<endl;
+		cout<<x->V[50][50][0].transpose()<<endl;
 		x->WriteFileH5(step,1);
 	}
 

@@ -62,25 +62,20 @@ public:
 	Vector3d***                     ABody;                                                  // Body force
 	Vector3d***						ExForce;												// External force
 	double***                       Ns;                                                     // Solid Fraction
+	VectorXd***                     Fo;                                                     // Intermediate distribution function for Walsh Model
 
     //================================== Flow in Porous Media  ==================================================//
-	//================================== (Partial Bounce Back)(Walsh)============================================//
-	void CollideSRTWalsh();
-	void StreamWalsh();
-	VectorXd***                     Fo;                     
-    //================================== (Partial Bounce Back)(Zhu)  ============================================//
-    void CollideSRTZhu();
-	void BodyForceLocalZhu(int i, int j, int k, Vector3d force);
-	//================================== (Partial Bounce Back)(Gray) ============================================//
-	void StreamGray();
+    //================================== (Partial Bounce Back)(Zhu's Model)  ====================================//
+    void CollideSRTGray();
+    void StreamGray();
+	void BodyForceLocalGray(int i, int j, int k, Vector3d force);
 	void CalRhoVLocalGray(int i, int j, int k);
 	void CalRhoVGray();
-	void CollideSRTGray();
-	void BodyForceLocalGray(int i, int j, int k, Vector3d force);
-	//=================================  Boundary Conditions ===================================================//
+	//================================== (Partial Bounce Back)(Walsh)============================================//
+	void CollideSRTWalsh();
+	void StreamWalsh();                 
 
-// private:
-
+// private
 // Private Variables =====================================================================================================================================
 
 	CollisionModel 					Cmodel;
@@ -529,7 +524,7 @@ inline void LBM::CollideSRTLocal(int i, int j, int k)
 	VectorXd feq(Q);
 	(this->*CalFeq)(feq, Rho[i][j][k], V[i][j][k]);
 
-	Fo[i][j][k] = F[i][j][k];
+	Fo[i][j][k] = F[i][j][k];       // Walsh Model: Save distribution function before streaming
 
     Ft[i][j][k] = Omega*feq + (1.-Omega)*F[i][j][k];
 }
@@ -563,37 +558,19 @@ inline void LBM::BodyForceLocal(int i, int j, int k, Vector3d force)
 	}
 }
 
-//Discrete Force Term Eq(7)
-//An immersed boundary-lattice Boltzmann method combined with a robust lattice spring model for solving flow–structure interaction problems
-inline void LBM::BodyForceLocalGray(int i, int j, int k, Vector3d force)
-{
-	for (int q=0; q<Q; ++q)
-	{
-		Vector3d emu  = E[q] - V[i][j][k];
-		Vector3d eue  = E[q].dot(V[i][j][k])*E[q];
-		Vector3d emue = 3*emu + 9*eue;
-
- 		Ft[i][j][k](q) += (1-0.5*Omega)*W[q]*emue.dot(force);
-
-		if (Ft[i][j][k](q)<0.)
-		{
-			cout << "negative after force term!" << endl;
-			cout << "force= " << force.transpose() << endl;
-			cout << i << " " << j << " " << k << endl;
-			cout << "vel= " << V[i][j][k].transpose() << endl;
-			abort();
-		}
-	}
-}
-
 //An improved gray lattice Boltzmann model for simulating fluid flow in multi-scale porous media
-inline void LBM::BodyForceLocalZhu(int i, int j, int k, Vector3d force)
+inline void LBM::BodyForceLocalGray(int i, int j, int k, Vector3d force)
 {
 	for (int q=0; q<Q; ++q)
 	{
 		double      fee = (E[q]-V[i][j][k]).dot(force);
 
  		Ft[i][j][k](q) += 3*fee*Ft[i][j][k](q)/Rho[i][j][k];
+
+ 		// Vector3d emu  = E[q] - V[i][j][k];                  // "Force Term"
+		// Vector3d eue  = E[q].dot(V[i][j][k])*E[q];
+		// Vector3d emue = 3*emu + 9*eue;
+		// Ft[i][j][k](q) += (1-0.5*Omega)*W[q]*emue.dot(force);
 
 		if (Ft[i][j][k](q)<0.)
 		{
@@ -663,21 +640,6 @@ inline void LBM::CollideSRTGray()
     }
 }
 
-inline void LBM::CollideSRTZhu()
-{
-    // cout << "CollideMRT" << endl;
-    #pragma omp parallel for schedule(static) num_threads(Nproc)
-    for (int i=0; i<=Nx; i++)
-    for (int j=0; j<=Ny; j++)
-    for (int k=0; k<=Nz; k++)
-    {
-		CollideSRTLocal(i, j, k);
-	    Vector3d bf = ABody[i][j][k] + ExForce[i][j][k];
-    	BodyForceLocalZhu(i, j, k, bf);
-	    ExForce[i][j][k] = Vector3d::Zero();
-    }
-}
-
 inline void LBM::CollideSRTWalsh()
 {
     // cout << "CollideMRT" << endl;
@@ -688,7 +650,7 @@ inline void LBM::CollideSRTWalsh()
     {
 		CollideSRTLocal(i, j, k);
 	    Vector3d bf = ABody[i][j][k] + ExForce[i][j][k];
-    	BodyForceLocalZhu(i, j, k, bf);
+    	BodyForceLocalGray(i, j, k, bf);
 	    ExForce[i][j][k] = Vector3d::Zero();
     }
 }

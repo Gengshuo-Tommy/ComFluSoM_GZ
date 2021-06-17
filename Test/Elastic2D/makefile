@@ -4,9 +4,9 @@ CFLAGS = -O3 -Wall -std=c++11
 
 LFLAGS = -lhdf5_serial -lhdf5_cpp -fopenmp
 
-INCLUDES = -I /usr/include/hdf5/serial/ -I $(TComFluSoM)/Library/LBM -I /usr/include/eigen3/
+INCLUDES = -I /usr/include/hdf5/serial/ -I $(TComFluSoM)/Library/MPLBM -I /usr/include/eigen3/
 
-TARGET = LBM001
+TARGET = Elastic2D
 
 all: $(TARGET)
 

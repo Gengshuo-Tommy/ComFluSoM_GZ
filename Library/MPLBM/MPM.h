@@ -606,95 +606,19 @@ void MPM::NodeToParticle()
 			Lp[p]->V = Lp[p]->Vf;
 			Lp[p]->X += Lp[p]->V*Dt;
 		}
-		// CalVOnNodeDoubleMapping();
+
 		// Velocity gradient tensor
 		CalVGradLocal(p);
-		// if (p==42396)
-		// // if (Lp[p]->V.norm()>0.005)
-		// {
-		// 	cout << "p: " << p << endl;
-		// 	cout << "Lp[p]->V" << Lp[p]->V.transpose() << endl;
-		// 	cout << "Lp[p]->X" << Lp[p]->X.transpose() << endl;
-		// 	for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
-		// 	{
-		// 		size_t 	id = Lp[p]->Lni[l];
-		// 		double 	n  = Lp[p]->LnN[l];
-		// 		Vector3d an = Ln[id]->F/Ln[id]->M;
-		// 		cout << "l: " << l << endl;
-		// 		cout << "n: " << n << endl;
-		// 		cout << "an: " << an.transpose() << endl;
-		// 		cout << "n*an*Dt: " << (n*an*Dt).transpose() << endl;
-		// 		cout << "Ln[id]->X: " << Ln[id]->X.transpose() << endl;
-		// 		cout << "xp-x: " << (Ln[id]->X-Lp[p]->X).transpose() << endl;
-		// 		cout << "Ln[id]->F: " << Ln[id]->F.transpose() << endl;
-		// 		cout << "Ln[id]->M: " << Ln[id]->M << endl;	
-		// 		if (Ln[id]->M<1.0e-5)
-		// 		{
-		// 			cout << "Lp[p]->M*n: " << Lp[p]->M*n << endl;
-		// 			Vector3d anl;
-		// 			anl(0) = exp(log(Ln[id]->F(0))-log(Ln[id]->M));
-		// 			anl(1) = exp(log(Ln[id]->F(1))-log(Ln[id]->M));
-		// 			anl(2) = exp(log(Ln[id]->F(2))-log(Ln[id]->M));
-		// 			cout << "anl: " << anl.transpose() << endl;
-		// 			// abort();
-		// 		}
-		// 		cout << "+++++++++++++++++++++++++++++++++" << endl;		
-		// 	}
-
-		// 	Matrix3d Lt = Matrix3d::Zero();
-		// 	for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
-		// 	{
-		// 		size_t	 	id = Lp[p]->Lni[l];
-		// 		Vector3d 	gn 	= Lp[p]->LnGN[l];
-		// 		// Calculate velocity gradient tensor
-		// 		Lt += Ln[id]->V*gn.transpose();
-		// 	}
-		// 	cout << "L:" << endl;
-		// 	cout << Lp[p]->L << endl;
-		// 	cout << "***********************" << endl;
-		// 	cout << "Lt:" << endl;
-		// 	cout << Lt << endl;
-		// 	cout << "==================" << endl;
-		// 	// abort();
-		// }
-
-		// if (Lp[p]->V.norm()>0.05)
-		// {
-		// 	cout << "velocity larger than 0.005" << endl;
-		// 	cout << Lp[p]->V.transpose() << endl;
-		// 	abort();
-		// }
-		// Update deformation tensor
-		// trying to fix volumetric locking "Overcoming volumetric locking in material point methods"
-/*		Matrix3d df = Dt*Lp[p]->L*Lp[p]->Td;
-		Matrix3d dfs = 0.5*(df+df.transpose());
-		double dfp = (dfs(0,0)+dfs(1,1)+dfs(2,2))/3.;
-		Matrix3d dfv = dfp*Matrix3d::Identity();
-		// Lp[p]->Td *= pow(dfv.determinant()/Lp[p]->Td.determinant(),1./D);
-
-
-		if (df.determinant()>1.e-12) Lp[p]->Td += pow(dfv.determinant()/df.determinant(),1./D)*df;*/
-		// #pragma omp critical
-		// {
-		// 	cout << "pow(dfv.determinant()/df.determinant(),1./D): " << pow(dfv.determinant()/df.determinant(),1./D) << endl;
-		// 	cout << dfv.determinant() << endl;
-		// 	cout << df.determinant() << endl;
-		// 	cout << 1./D << endl;
-		// 	abort();
-		// }
-
-		Lp[p]->Td = (Matrix3d::Identity() + Lp[p]->L*Dt)*Lp[p]->Td;
 		// Update particle length
 		if (Lp[p]->Type==0)	CalPSizeR(p);
-		// else 				CalPSizeCP(p);
-		// else if (Lp[p]->Type==2 || Lp[p]->Type==3)	CalPSizeCP(p);
 		// Update volume of particles
+		Lp[p]->Td = (Matrix3d::Identity() + Lp[p]->L*Dt)*Lp[p]->Td;
 		Lp[p]->Vol 	= Lp[p]->Td.determinant()*Lp[p]->Vol0;
 		// Update strain
 		Matrix3d de = 0.5*Dt*(Lp[p]->L + Lp[p]->L.transpose());
 		// Update stress
-		// Matrix3d w = 0.5*Dt*((Lp[p]->L - Lp[p]->L.transpose()));
-		// Lp[p]->Stress += w*Lp[p]->Stress+Lp[p]->Stress*w.transpose();
+		Matrix3d dw = 0.5*Dt*((Lp[p]->L - Lp[p]->L.transpose()));
+		Lp[p]->Stress += dw*Lp[p]->Stress + Lp[p]->Stress*dw.transpose();
 		if (Lp[p]->Type==0)			Lp[p]->Elastic(de);
 		else if (Lp[p]->Type==1)
 		{
@@ -706,8 +630,8 @@ void MPM::NodeToParticle()
 		else if (Lp[p]->Type==5)
 		{
 			// Lp[p]->EOSMonaghan(Cs);
-			Lp[p]->EOSMorris(Cs);
-			Lp[p]->Granular(de);
+			// Lp[p]->EOSMorris(Cs);
+			Lp[p]->Granular(de,dw);
 		}
 		// Reset hydro force and contact force
 		Lp[p]->Fh.setZero();

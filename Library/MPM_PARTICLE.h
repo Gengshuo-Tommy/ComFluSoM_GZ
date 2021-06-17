@@ -518,25 +518,41 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 	tau_bar   = tau_bar_tr;
 	p         = p_tr;
 
+	// set constant variables
+	double phi  = 0.8;
+	double phi_m = 0.584;
+	double mu_1 = 0.35;
+	double beta;
+
 	// check elasticity
-	// if (!is_sovled)
-	// {
-	// 	double phi  = 0.8;
-	// 	double phi_m = 0.584;
-	// 	double mu_1 = 0.35;
-	// 	// beta = getBeta(phi, phi_m);
-	// 	double beta;
-	// 	beta = phi - phi_m;
-	// 	if ((p_tr >= 0) && (tau_bar_tr <= ((mu_1 + beta)*p_tr)) && (phi >= phi_m))
-	// 	{
-	// 		p = p_tr;
-	// 		tau_bar = tau_bar_tr; 
-	// 		is_sovled = true;
-	// 	}
-	// }
+	if (!is_sovled)
+	{
+		beta = phi - phi_m;
+		if ((p_tr >= 0) && (tau_bar_tr <= ((mu_1 + beta)*p_tr)) && (phi >= phi_m))
+		{
+			p = p_tr;
+			tau_bar = tau_bar_tr; 
+			is_sovled = true;
+		}
+	}
+
+	// zero strength limit on f1 only
+	if (!is_sovled)
+	{
+		beta = phi - phi_m;
+		// set bisection to find maximum pressure0
+
+		// at zero strength limit
+		beta    = phi - 0.0;
+		p_max   = p_tr + ;
+		p_min   = 0.0;
+		tau_max = ;
+		tau_min = ;	
+
+	}
 
 	// update stress
-	if ( /* p >= 0 */ tau_bar >0 )
+	if ( p >= 0 && tau_bar >0 )
 	{
 		T = tau_bar / tau_bar_tr * (T_tr - T_tr.trace() / 3.0 * Matrix3d::Identity());
 		T = T - p * Matrix3d::Identity();

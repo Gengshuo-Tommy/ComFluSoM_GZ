@@ -1,4 +1,4 @@
-// 2D simulation of a elastic beam under gravity
+// 2D simulation of sand
 
 #include <MPM.h>
 
@@ -8,7 +8,7 @@ int main(int argc, char const *argv[])
 	Vector3d gridSize (1,1,1);
 	// Domain size
 	int nx = 100;
-	int ny = 100;
+	int ny = 80;
 	int nz = 0;
 	// Create MPM domain
 	MPM* a = new MPM(/*shape function type*/3, nx, ny, nz, gridSize);
@@ -33,9 +33,9 @@ int main(int argc, char const *argv[])
 	double Young 	= YoungPhysical*dx*dt*dt/dm;
 	double Poisson 	= PoissonPhysical;
 	// Start point of the box for generating particles
-	Vector3d x0 (20, 80, 0);
+	Vector3d x0 (1,   1,  0);
 	// demention of the box
-	Vector3d l0 (20, 4,  0);
+	Vector3d l0 (40, 40,  0);
 	a->Nproc = 1;
 	a->Dc = 0.;
 	// Generate a box of particles
@@ -46,20 +46,22 @@ int main(int argc, char const *argv[])
 		// a->Lp[p]->SetElastic(Young, Poisson);
 		a->Lp[p]->SetGranular(Young, Poisson);
 		a->Lp[p]->B  = G;
-		a->Lp[p]->Stress(0,0) = -0.000001;
-		// a->Lp[p]->Stress(0,1) = 0.000001;
-		// a->Lp[p]->Stress(1,0) = -0.000001;
-		a->Lp[p]->Stress(1,1) = 0.000001;
 	}
 	// Define boundary
-	for (int i=19; i<=20; ++i)
-	for (int j=0;  j<ny;  ++j)
+	for (int i=0;  i<= 1;  ++i)
+	for (int j=0;  j<=ny;  ++j)
+	{
+		a->SetNonSlippingBC(i,j,0);
+	}
+
+	for (int i=0;  i<=nx;  ++i)
+	for (int j=0;  j<=1;  ++j)
 	{
 		a->SetNonSlippingBC(i,j,0);
 	}
 
 	// Solve
-	for (int step=0; step <= 50000; ++step)
+	for (int step=0; step <= 1; ++step)
 	{
 		if (step % 100 == 0) // output the file per 100 times
 		{

@@ -1,24 +1,22 @@
-# ComFluSoM
-ComFluSoM is a simulation kit for **Com**plex **Flu**id, **So**lid and **So**il **M**echanics problems. Typically, Fluid-Structure Interactions, Fluid-Particle interactions.
+# TComFluSoM
+TComFLuSoM is a modified version of ComFluSoM on github for a PhD candidate's project.
+
 # Methods
-- **Lattice Boltzmann Method (LBM)** for flow.
-- **Material Point Method (MPM)** for solid and soil deformations.
-- **Discrete Element Method (DEM)** for rigid particle motions. 
-- **Random Walking Method (RWM)** for solute (heat) transports.
+- Material point method (MPM) for solid phase
+- Lattic Boltzmann method (LBM) for water flow
+- Coupled material point lattice Boltzmann method (MPLBM) for solid water interactions
+
 # Enveriment
 - Ubuntu 18.04
+
 # How to install
-- Download the source code.
-- Install dependencies (eigen3 and hdf5).
-```
-sudo apt install libeigen3-dev
-sudo apt install libhdf5-dev
-```
-- Set environment variable.
-```
-sudo gedit ~/.bashrc
-// Add following line to .bashrc
-export ComFluSoM=~/ComFluSoM
-```
+- sudo apt install libeigen3-dev
+- sudo apt install libhdf5-dev
+
+# Set environment variable.
+- sudo gedit ~/.bashrc
+- export TComFluSoM=~/TComFluSoM (Add the command to .bashrc file)
+
+
 # How to compile and run
 - use make to compile and ./ to run.

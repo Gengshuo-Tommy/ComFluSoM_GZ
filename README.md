@@ -1,24 +1,27 @@
 # TComFluSoM
-TComFluSoM is a modified version for my PhD project at University of Queensland. Original codes can be refer to https://github.com/peizhang-cn/ComFluSoM.
+- TComFluSoM is a modified version for my PhD project at University of Queensland. 
+- Original codes can be refer to https://github.com/peizhang-cn/ComFluSoM.
 
 # Methods
-- **Lattice Boltzmann Method (LBM)** for flow.
-- **Material Point Method (MPM)** for solid and soil deformations.
+- Material point method (MPM)
+- Lattice Boltzmann method (LBM)
+- Coupled material point lattice Boltzmann method (MPLBM)
 
 # Enveriment
-- Linux
+- Linux 18.04
+
 # How to install
 - Download the source code.
 - Install dependencies (eigen3 and hdf5).
-```
-sudo apt install libeigen3-dev
-sudo apt install libhdf5-dev
-```
-- Set environment variable.
-```
-sudo gedit ~/.bashrc
-// Add following line to .bashrc
-export TComFluSoM=~/TComFluSoM
-```
-# How to compile and run
-- use make to compile and ./ to run.
+
+# Command
+- sudo apt install libeigen3-dev
+- sudo apt install libhdf5-dev
+
+# Set environment variable.
+
+- sudo gedit ~/.bashrc
+- add "export TComFluSoM=~/TComFluSoM" to the file
+
+# Compile and run
+- make and run

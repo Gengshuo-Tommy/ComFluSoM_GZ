@@ -34,6 +34,7 @@ public:
 	void CalNGN_MLS(MPM_PARTICLE* p0);
 	void UpdateLAn();
 	void ParticleToNode();
+	void ParticleToNodePoro();
 	void ParticleToNodeMLS();
 	void CalFOnNode(bool firstStep);
 	void NodeToParticle();
@@ -59,8 +60,7 @@ public:
 	// void AddParticle(int tag, Vector3d& x, double m, double young, double poisson);
 	void AddParticle(int tag, Vector3d& x, double m);
 	void DeleteParticles();
-	// void AddBoxParticles(Vector3d& x0, Vector3d& l, double ratio, double m, double young, double poisson);
-	void AddBoxParticles(int tag, Vector3d& x0, Vector3d& l, double ratio, double m);
+	void AddBoxParticles(int tag, Vector3d& x0, Vector3d& l, double ratio, double rhos_input);
 	void WriteFileH5(int n);
 	void FindIndex(size_t n, size_t& i, size_t& j, size_t& k);
 	void LoadMPMFromH5(string fname, double ratio);
@@ -231,15 +231,15 @@ void MPM::ParticleToNode()
 	{
 		size_t id = LAn[n];
 		Ln[id]->Reset();
-    }
-    LAn.resize(0);
-    // Update shape function and grad
-    #pragma omp parallel for schedule(static) num_threads(Nproc)
-    for (size_t p=0; p<Lp.size(); ++p)
-    {
-    	CalNGN(Lp[p]);
+	}
+   LAn.resize(0);
+   // Update shape function and grad
+   #pragma omp parallel for schedule(static) num_threads(Nproc)
+   for (size_t p=0; p<Lp.size(); ++p)
+   {
+   	CalNGN(Lp[p]);
     	Matrix3d vsp = -Lp[p]->Vol*Lp[p]->Stress;
-		Vector3d fex = Lp[p]->M*Lp[p]->B + Lp[p]->Fh + Lp[p]->Fc;
+		Vector3d fex = Lp[p]->Rhos*Lp[p]->Vol*Lp[p]->B + Lp[p]->Fh + Lp[p]->Fc;
 
 		for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
 		{
@@ -250,7 +250,7 @@ void MPM::ParticleToNode()
 			Vector3d 	gn 	= Lp[p]->LnGN[l];
 			Vector3d 	df 	= n*fex + vsp*gn;
 			// weigthed mass contribution
-			double nm = n*Lp[p]->M;
+			double nm = n*Lp[p]->Rhos;
 			// if (nm<0.)
 			// {
 			// 	cout << "mass problem" << endl;
@@ -280,8 +280,81 @@ void MPM::ParticleToNode()
 				}
 			}
 		}
-    }
-    UpdateLAn();
+   }
+   UpdateLAn();
+}
+
+void MPM::ParticleToNodePoro()
+{
+	// reset mass internal force velocity for nodes
+	#pragma omp parallel for schedule(static) num_threads(Nproc)
+	for (size_t n=0; n<LAn.size(); ++n)
+	{
+		size_t id = LAn[n];
+		Ln[id]->Reset();
+   }
+   LAn.resize(0);
+   // Update shape function and grad
+   #pragma omp parallel for schedule(static) num_threads(Nproc)
+   for (size_t p=0; p<Lp.size(); ++p)
+   {
+   	CalNGN(Lp[p]);
+    	Matrix3d vsp  = -Lp[p]->Vol*Lp[p]->Stress;
+		Vector3d fex  = (1-Lp[p]->Poro)*Lp[p]->Rhos*Lp[p]->Vol*Lp[p]->B + Lp[p]->Fh;
+		double   pex  = (1-Lp[p]->Poro)*Lp[p]->Vol*Lp[p]->P;
+
+		for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
+		{
+			// Grid id
+			size_t id = Lp[p]->Lni[l];
+			// weight
+			double 		n 	 = Lp[p]->LnN[l];
+			Vector3d 	gn  = Lp[p]->LnGN[l];
+			Vector3d 	df  = n*fex + pex*gn + vsp*gn; 
+			// weigthed mass contribution
+			double nm  = n*Lp[p]->Rhos*Lp[p]->Vol;
+			double npm = n*Lp[p]->Rhos*Lp[p]->Vol*Lp[p]->Poro;
+			if (nm<0.)
+			{
+				cout << "mass problem" << endl;
+				cout << "nm= " << nm << endl;
+				cout << "p= " << p << endl;
+				cout << "id= " << id << endl;
+				cout << "Lp[p]->X= " << Lp[p]->X.transpose() << endl;
+				cout << "Ln[id]->X= " << Ln[id]->X.transpose() << endl;
+				abort();
+			}
+			Vector3d ve = Lp[p]->V-Lp[p]->L*(Lp[p]->X-Ln[id]->X);
+			#pragma omp atomic
+			Ln[id]->M  += nm;
+			#pragma omp atomic
+			Ln[id]->Mp += npm;
+			for (size_t d=0; d<D; ++d)
+			{
+				#pragma omp atomic
+				Ln[id]->Mv(d) += nm*ve(d);
+				#pragma omp atomic
+				Ln[id]->F(d) += df(d);
+				// smooth stress on node
+				for (size_t c=0; c<D; ++c)
+				{
+					#pragma omp atomic
+					Ln[id]->Stress(d,c) += nm*Lp[p]->Stress(d,c);
+				}
+			}
+
+			#pragma omp parallel for schedule(static) num_threads(Nproc)
+			for (size_t p=0; p<Lp.size(); ++p)
+			{
+				for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
+				{
+					size_t id = Lp[p]->Lni[l];
+					Ln[id]->Poro = Ln[id]->Mp/Ln[id]->M;
+				}
+			}
+		}
+   }
+   UpdateLAn();
 }
 
 void MPM::CalNGN_MLS(MPM_PARTICLE* p0)
@@ -393,18 +466,18 @@ void MPM::ParticleToNodeMLS()
     	CalNGN_MLS(Lp[p]);
 
     	Matrix3d vsp = -Lp[p]->Vol*Lp[p]->Stress;
-		Vector3d fex = Lp[p]->M*Lp[p]->B + Lp[p]->Fh;
+		Vector3d fex = Lp[p]->Rhos*Lp[p]->Vol*Lp[p]->B + Lp[p]->Fh;
 
 		for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
 		{
 			// Grid id
 			size_t id = Lp[p]->Lni[l];
 			// weight
-			double 		n 	= Lp[p]->LnN[l];
-			Vector3d 	gn 	= Lp[p]->LnGN[l];
-			Vector3d 	df 	= n*fex + vsp*gn;
+			double 		n 	 = Lp[p]->LnN[l];
+			Vector3d 	gn  = Lp[p]->LnGN[l];
+			Vector3d 	df  = n*fex + vsp*gn;
 			// weigthed mass contribution
-			double nm = n*Lp[p]->M;
+			double nm = n*Lp[p]->Rhos*Lp[p]->Vol;
 
 			if (nm<0.)
 			{
@@ -611,49 +684,27 @@ void MPM::NodeToParticle()
 		CalVGradLocal(p);
 		// Update particle length
 		if (Lp[p]->Type==0)	CalPSizeR(p);
-		// Update volume of particles
-		Lp[p]->Td = (Matrix3d::Identity() + Lp[p]->L*Dt)*Lp[p]->Td;
+		// Update deformation tensor
+		Lp[p]->Td   = (Matrix3d::Identity() + Lp[p]->L*Dt)*Lp[p]->Td;
 		Lp[p]->Vol 	= Lp[p]->Td.determinant()*Lp[p]->Vol0;
+		// Update Porosity
+		Lp[p]->Poro = 1 - (1 - Lp[p]->PoroInit)/Lp[p]->Td.determinant();
 		// Update strain
 		Matrix3d de = 0.5*Dt*(Lp[p]->L + Lp[p]->L.transpose());
-		// Update stress
 		Matrix3d dw = 0.5*Dt*((Lp[p]->L - Lp[p]->L.transpose()));
+		// Update stress (elastic part)
 		Lp[p]->Stress += dw*Lp[p]->Stress + Lp[p]->Stress*dw.transpose();
 		if (Lp[p]->Type==0)			Lp[p]->Elastic(de);
-		else if (Lp[p]->Type==1)
-		{
-			Lp[p]->EOSMonaghan(Cs);
-			Lp[p]->Newtonian(de);
-		}
-		else if (Lp[p]->Type==2)	Lp[p]->MohrCoulomb(de);
 		else if (Lp[p]->Type==3)	Lp[p]->DruckerPrager(de);
 		else if (Lp[p]->Type==5)
 		{
-			// Lp[p]->EOSMonaghan(Cs);
-			// Lp[p]->EOSMorris(Cs);
 			Lp[p]->Granular(de,dw);
 		}
 		// Reset hydro force and contact force
 		Lp[p]->Fh.setZero();
 		Lp[p]->Fc.setZero();
 	}
-	// int npf = 0;
-	// for (size_t p=0; p<Lp.size(); ++p)
-	// {
-	// 	if (Lp[p]->Type==1)
-	// 	{
-	// 		npf++;
-	// 	}
-	// }
-	// if (npf!=16200)
-	// {
-	// 	cout << "npf= " << npf << endl;
-	// 	abort();
-	// }
 }
-
-// void MPM::SmoothStress()
-// {}
 
 void MPM::CalVOnNodeDoubleMapping()
 {
@@ -663,17 +714,17 @@ void MPM::CalVOnNodeDoubleMapping()
 		Ln[c]->V = Vector3d::Zero();
 	}
 	// Double map velocity from particles to nodes to aviod small mass problem
-    #pragma omp parallel for schedule(static) num_threads(Nproc)
-    for (size_t p=0; p<Lp.size(); ++p)
-    {
-		for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
+   #pragma omp parallel for schedule(static) num_threads(Nproc)
+   for (size_t p=0; p<Lp.size(); ++p)
+   {
+   	for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
 		{
 			// Grid id
-			size_t id = Lp[p]->Lni[l];
+			size_t id   = Lp[p]->Lni[l];
 			// weight
-			double 		n 	= Lp[p]->LnN[l];
+			double n 	= Lp[p]->LnN[l];
 			// weigthed mass contribution
-			double nm = n*Lp[p]->M;
+			double nm   = n*Lp[p]->Rhos*Lp[p]->Vol;
 			// #pragma omp atomic
 			for (size_t d=0; d<D; ++d)
 			{
@@ -681,7 +732,7 @@ void MPM::CalVOnNodeDoubleMapping()
 				Ln[id]->Mv(d) += nm*Lp[p]->V(d);
 			}
 		}
-    }
+   }
 	#pragma omp parallel for schedule(static) num_threads(1)
 	for (size_t c=0; c<LAn.size(); ++c)
 	{
@@ -695,7 +746,7 @@ void MPM::CalVGradLocal(int p)
 	for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
 	{
 		size_t	 	id = Lp[p]->Lni[l];
-		Vector3d 	gn 	= Lp[p]->LnGN[l];
+		Vector3d 	gn = Lp[p]->LnGN[l];
 		// Calculate velocity gradient tensor
 		Lp[p]->L += Ln[id]->V*gn.transpose();
 	}
@@ -974,8 +1025,8 @@ void MPM::SolveMUSL(int tt, int ts)
 
 void MPM::AddNode(size_t level, Vector3d& x)
 {
-    Ln.push_back(new MPM_NODE(level,x));
-    Ln[Ln.size()-1]->ID = Ln.size()-1;
+   Ln.push_back(new MPM_NODE(level,x));
+   Ln[Ln.size()-1]->ID = Ln.size()-1;
 }
 
 // void MPM::AddParticle(int tag, Vector3d& x, double m, double young, double poisson)
@@ -986,8 +1037,8 @@ void MPM::AddNode(size_t level, Vector3d& x)
 
 void MPM::AddParticle(int tag, Vector3d& x, double m)
 {
-    Lp.push_back(new MPM_PARTICLE(tag,x,m));
-    Lp[Lp.size()-1]->ID = Lp.size()-1;
+   Lp.push_back(new MPM_PARTICLE(tag,x,m));
+   Lp[Lp.size()-1]->ID = Lp.size()-1;
 }
 
 void MPM::DeleteParticles()
@@ -1062,7 +1113,7 @@ void MPM::DeleteParticles()
 //     }
 // }
 
-void MPM::AddBoxParticles(int tag, Vector3d& x0, Vector3d& l, double ratio, double m)
+void MPM::AddBoxParticles(int tag, Vector3d& x0, Vector3d& l, double ratio, double rhos_input)
 {
 	Vector3i maxx = Vector3i::Zero();
 	for (size_t d=0; d<D; ++d)
@@ -1071,31 +1122,31 @@ void MPM::AddBoxParticles(int tag, Vector3d& x0, Vector3d& l, double ratio, doub
 	}
 
 	for (int k=0; k<=maxx(2); ++k)
-    for (int j=0; j<=maxx(1); ++j)
-    for (int i=0; i<=maxx(0); ++i)
-    {
-    	Vector3d x = Vector3d::Zero();
-    					x(0) = ratio*(i + 0.5)+x0(0);
-    	if (D>1)		x(1) = ratio*(j + 0.5)+x0(1);
+   for (int j=0; j<=maxx(1); ++j)
+   for (int i=0; i<=maxx(0); ++i)
+   {
+   	Vector3d x = Vector3d::Zero();
+   	            x(0) = ratio*(i + 0.5)+x0(0);
+      if (D>1)		x(1) = ratio*(j + 0.5)+x0(1);
     	if (D>2)		x(2) = ratio*(k + 0.5)+x0(2);
 
-    	AddParticle(tag, x, m);
-    }
+    	AddParticle(tag, x, rhos_input);
+   }
 
-    for (size_t p=0; p<Lp.size(); ++p)
-    {
-    	Lp[p]->Vol0 = 1.;
-    	for (size_t d=0; d<D; ++d)
-    	{
-    		Lp[p]->Vol0 *= ratio;
-    		if (Ntype==3)	Lp[p]->PSize0(d) = 0.5*ratio;
-    		else 			Lp[p]->PSize0(d) = 0.;
-    		Lp[p]->PSize(d) = Lp[p]->PSize0(d);
-    	}
-    	Lp[p]->Vol 	= Lp[p]->Vol0;
-    	// Assume a radius of MPM particle for DEMPM 
-    	Lp[p]->R 	= pow(3.*Lp[p]->Vol0/(4.*M_PI), 1./3.);
-    }
+   for (size_t p=0; p<Lp.size(); ++p)
+   {
+   	Lp[p]->Vol0 = 1.;
+   	for (size_t d=0; d<D; ++d)
+   	{
+	 		Lp[p]->Vol0 *= ratio;
+	 		if (Ntype==3)	Lp[p]->PSize0(d) = 0.5*ratio;
+	 		else 			   Lp[p]->PSize0(d) = 0.;
+	 		Lp[p]->PSize(d) = Lp[p]->PSize0(d);
+	 	}
+	 	Lp[p]->Vol 	= Lp[p]->Vol0;
+	 	// Assume a radius of MPM particle for DEMPM 
+	 	Lp[p]->R 	= pow(3.*Lp[p]->Vol0/(4.*M_PI), 1./3.);
+	}
 }
 
 inline void MPM::LoadMPMFromH5(string fname, double ratio)
@@ -1106,109 +1157,108 @@ inline void MPM::LoadMPMFromH5(string fname, double ratio)
 	H5File file_pos( FILE_NAME, H5F_ACC_RDONLY );
 	DataSet dataset_pos = file_pos.openDataSet( DATASET_NAME_POS );
 	DataSpace dataspace_pos = dataset_pos.getSpace();
-    hsize_t dims_pos[2];
-    dataspace_pos.getSimpleExtentDims( dims_pos, NULL);
-    hsize_t dimsm_pos = dims_pos[0];
-    cout <<"Position" << endl;
+   hsize_t dims_pos[2];
+   dataspace_pos.getSimpleExtentDims( dims_pos, NULL);
+   hsize_t dimsm_pos = dims_pos[0];
+   cout <<"Position" << endl;
 
 	H5std_string DATASET_NAME_VEL( "Velocity" );
 	H5File file_vel( FILE_NAME, H5F_ACC_RDONLY );
 	DataSet dataset_vel = file_pos.openDataSet( DATASET_NAME_VEL );
 	DataSpace dataspace_vel = dataset_vel.getSpace();
-    hsize_t dims_vel[2];
-    dataspace_vel.getSimpleExtentDims( dims_vel, NULL);
-    hsize_t dimsm_vel = dims_vel[0];
-    cout <<"Velocity" << endl;
+   hsize_t dims_vel[2];
+   dataspace_vel.getSimpleExtentDims( dims_vel, NULL);
+   hsize_t dimsm_vel = dims_vel[0];
+   cout <<"Velocity" << endl;
 
 	H5std_string DATASET_NAME_PSIZE( "Psize" );
 	H5File file_psize( FILE_NAME, H5F_ACC_RDONLY );
 	DataSet dataset_psize = file_pos.openDataSet( DATASET_NAME_PSIZE );
 	DataSpace dataspace_psize = dataset_psize.getSpace();
-    hsize_t dims_psize[2];
-    dataspace_psize.getSimpleExtentDims( dims_psize, NULL);
-    hsize_t dimsm_psize = dims_psize[0];
-    cout <<"Psize" << endl;
+   hsize_t dims_psize[2];
+   dataspace_psize.getSimpleExtentDims( dims_psize, NULL);
+   hsize_t dimsm_psize = dims_psize[0];
+   cout <<"Psize" << endl;
 
 	H5std_string DATASET_NAME_S( "Stress" );
 	H5File file_s( FILE_NAME, H5F_ACC_RDONLY );
 	DataSet dataset_s = file_pos.openDataSet( DATASET_NAME_S );
 	DataSpace dataspace_s = dataset_s.getSpace();
-    hsize_t dims_s[2];
-    dataspace_s.getSimpleExtentDims( dims_s, NULL);
-    hsize_t dimsm_s = dims_s[0];
-    cout <<"Stress" << endl;
+   hsize_t dims_s[2];
+   dataspace_s.getSimpleExtentDims( dims_s, NULL);
+   hsize_t dimsm_s = dims_s[0];
+   cout <<"Stress" << endl;
 
 	H5std_string DATASET_NAME_TD( "Derformation_Tensor" );
 	H5File file_td( FILE_NAME, H5F_ACC_RDONLY );
 	DataSet dataset_td = file_pos.openDataSet( DATASET_NAME_TD );
 	DataSpace dataspace_td = dataset_td.getSpace();
-    hsize_t dims_td[2];
-    dataspace_td.getSimpleExtentDims( dims_td, NULL);
-    hsize_t dimsm_td = dims_td[0];
-    cout <<"Derformation_Tensor" << endl;
-
+   hsize_t dims_td[2];
+   dataspace_td.getSimpleExtentDims( dims_td, NULL);
+   hsize_t dimsm_td = dims_td[0];
+   cout <<"Derformation_Tensor" << endl;
 	H5std_string DATASET_NAME_M( "Mass" );
 	H5File file_m( FILE_NAME, H5F_ACC_RDONLY );
 	DataSet dataset_m = file_m.openDataSet( DATASET_NAME_M );
 	DataSpace dataspace_m = dataset_m.getSpace();
-    hsize_t dims_m[2];
-    dataspace_m.getSimpleExtentDims( dims_m, NULL);
-    hsize_t dimsm_m = dims_m[0];
-    cout <<"Mass" << endl;
+   hsize_t dims_m[2];
+   dataspace_m.getSimpleExtentDims( dims_m, NULL);
+   hsize_t dimsm_m = dims_m[0];
+   cout <<"Mass" << endl;
 
 	H5std_string DATASET_NAME_VOL( "Volume" );
 	H5File file_vol( FILE_NAME, H5F_ACC_RDONLY );
 	DataSet dataset_vol = file_vol.openDataSet( DATASET_NAME_VOL );
 	DataSpace dataspace_vol = dataset_vol.getSpace();
-    hsize_t dims_vol[2];
-    dataspace_vol.getSimpleExtentDims( dims_vol, NULL);
-    hsize_t dimsm_vol = dims_vol[0];
-    cout <<"Volume" << endl;
+   hsize_t dims_vol[2];
+   dataspace_vol.getSimpleExtentDims( dims_vol, NULL);
+   hsize_t dimsm_vol = dims_vol[0];
+   cout <<"Volume" << endl;
 
 	H5std_string DATASET_NAME_TAG( "Tag" );
 	H5File file_tag( FILE_NAME, H5F_ACC_RDONLY );
 	DataSet dataset_tag = file_tag.openDataSet( DATASET_NAME_TAG );
 	DataSpace dataspace_tag = dataset_tag.getSpace();
-    hsize_t dims_tag[2];
-    dataspace_tag.getSimpleExtentDims( dims_tag, NULL);
-    hsize_t dimsm_tag = dims_tag[0];
-    cout <<"Tag" << endl;
+   hsize_t dims_tag[2];
+   dataspace_tag.getSimpleExtentDims( dims_tag, NULL);
+   hsize_t dimsm_tag = dims_tag[0];
+   cout <<"Tag" << endl;
 
-    double* data_pos = new double[dimsm_pos];
-    dataset_pos.read( data_pos, PredType::NATIVE_DOUBLE, dataspace_pos, dataspace_pos );
-    cout <<"data_pos" << endl;
+   double* data_pos = new double[dimsm_pos];
+   dataset_pos.read( data_pos, PredType::NATIVE_DOUBLE, dataspace_pos, dataspace_pos );
+   cout <<"data_pos" << endl;
 
-    double* data_vel = new double[dimsm_vel];
-    dataset_vel.read( data_vel, PredType::NATIVE_DOUBLE, dataspace_vel, dataspace_vel );
-    cout <<"data_vel" << endl;
+   double* data_vel = new double[dimsm_vel];
+   dataset_vel.read( data_vel, PredType::NATIVE_DOUBLE, dataspace_vel, dataspace_vel );
+   cout <<"data_vel" << endl;
 
-    double* data_s = new double[dimsm_s];
-    dataset_s.read( data_s, PredType::NATIVE_DOUBLE, dataspace_s, dataspace_s );
-    cout <<"data_s" << endl;
+   double* data_s = new double[dimsm_s];
+   dataset_s.read( data_s, PredType::NATIVE_DOUBLE, dataspace_s, dataspace_s );
+   cout <<"data_s" << endl;
 
-    double* data_td = new double[dimsm_td];
-    dataset_td.read( data_td, PredType::NATIVE_DOUBLE, dataspace_td, dataspace_td );
-    cout <<"data_td" << endl;
+   double* data_td = new double[dimsm_td];
+   dataset_td.read( data_td, PredType::NATIVE_DOUBLE, dataspace_td, dataspace_td );
+   cout <<"data_td" << endl;
 
-    double* data_m = new double[dimsm_m];
-    dataset_m.read( data_m, PredType::NATIVE_DOUBLE, dataspace_m, dataspace_m );
-    cout <<"data_m" << endl;
+   double* data_m = new double[dimsm_m];
+   dataset_m.read( data_m, PredType::NATIVE_DOUBLE, dataspace_m, dataspace_m );
+   cout <<"data_m" << endl;
 
-    double* data_tag = new double[dimsm_tag];
-    dataset_tag.read( data_tag, PredType::NATIVE_DOUBLE, dataspace_tag, dataspace_tag );
-    cout <<"data_tag" << endl;
+   double* data_tag = new double[dimsm_tag];
+   dataset_tag.read( data_tag, PredType::NATIVE_DOUBLE, dataspace_tag, dataspace_tag );
+   cout <<"data_tag" << endl;
 
-    double* data_vol = new double[dimsm_vol];
-    dataset_vol.read( data_vol, PredType::NATIVE_DOUBLE, dataspace_vol, dataspace_vol );
-    cout <<"data_vol" << endl;
+   double* data_vol = new double[dimsm_vol];
+   dataset_vol.read( data_vol, PredType::NATIVE_DOUBLE, dataspace_vol, dataspace_vol );
+   cout <<"data_vol" << endl;
 
-    double* data_psize = new double[dimsm_psize];
-    dataset_psize.read( data_psize, PredType::NATIVE_DOUBLE, dataspace_psize, dataspace_psize );
-    cout <<"data_psize" << endl;
+   double* data_psize = new double[dimsm_psize];
+   dataset_psize.read( data_psize, PredType::NATIVE_DOUBLE, dataspace_psize, dataspace_psize );
+   cout <<"data_psize" << endl;
 
-    int np = dimsm_pos/3;
-    for (int i=0; i<np; ++i)
-    {
+   int np = dimsm_pos/3;
+   for (int i=0; i<np; ++i)
+   {
     	Vector3d pos (data_pos[3*i], data_pos[3*i+1], data_pos[3*i+2]);
     	Vector3d vel (data_vel[3*i], data_vel[3*i+1], data_vel[3*i+2]);
     	Vector3d psize (data_psize[3*i], data_psize[3*i+1], data_psize[3*i+2]);
@@ -1245,18 +1295,18 @@ inline void MPM::LoadMPMFromH5(string fname, double ratio)
     		Lp[Lp.size()-1]->Vol0 *= ratio;
     		if (Ntype==3)	Lp[Lp.size()-1]->PSize0(d) = 0.5*ratio;
     	}
-    }
+   }
 
-    delete data_pos;
-    delete data_vel;
-    delete data_s;
-    delete data_td;
-    delete data_m;
-    delete data_tag;
-    delete data_vol;
-    delete data_psize;
+   delete data_pos;
+   delete data_vel;
+   delete data_s;
+   delete data_td;
+   delete data_m;
+   delete data_tag;
+   delete data_vol;
+   delete data_psize;
 
-    cout << "========= Loaded "<< Lp.size()<< " MPM particles from " << fname << "==============" << endl;
+   cout << "========= Loaded "<< Lp.size()<< " MPM particles from " << fname << "==============" << endl;
 }
 
 inline void MPM::WriteFileH5(int n)
@@ -1296,10 +1346,10 @@ inline void MPM::WriteFileH5(int n)
 
 	for (size_t i=0; i<Lp.size(); ++i)
 	{
-        tag_h5[  i  ] 	= Lp[i]->Tag;
-        m_h5  [  i  ] 	= Lp[i]->M;
-        vol_h5[  i  ] 	= Lp[i]->Vol;
-        poi_h5[  i  ] 	= Lp[i]->Poisson;
+      tag_h5[  i  ] 	= Lp[i]->Tag;
+      m_h5  [  i  ] 	= Lp[i]->Rhos;
+      vol_h5[  i  ] 	= Lp[i]->Vol;
+      poi_h5[  i  ] 	= Lp[i]->Poisson;
 		pos_h5[3*i  ] 	= Lp[i]->X(0);
 		pos_h5[3*i+1] 	= Lp[i]->X(1);
 		pos_h5[3*i+2] 	= Lp[i]->X(2);
@@ -1342,13 +1392,13 @@ inline void MPM::WriteFileH5(int n)
 	DataSet	*dataset_m		= new DataSet(file.createDataSet("Mass", PredType::NATIVE_DOUBLE, *space_scalar));
 	DataSet	*dataset_vol	= new DataSet(file.createDataSet("Volume", PredType::NATIVE_DOUBLE, *space_scalar));
 	DataSet	*dataset_poi	= new DataSet(file.createDataSet("Poisson", PredType::NATIVE_DOUBLE, *space_scalar));
-    DataSet	*dataset_pos	= new DataSet(file.createDataSet("Position", PredType::NATIVE_DOUBLE, *space_vector));
-    DataSet	*dataset_vel	= new DataSet(file.createDataSet("Velocity", PredType::NATIVE_DOUBLE, *space_vector));
-    DataSet	*dataset_psize	= new DataSet(file.createDataSet("Psize", PredType::NATIVE_DOUBLE, *space_vector));
-    DataSet	*dataset_s		= new DataSet(file.createDataSet("Stress", PredType::NATIVE_DOUBLE, *space_tensor));
-    DataSet	*dataset_td		= new DataSet(file.createDataSet("Derformation_Tensor", PredType::NATIVE_DOUBLE, *space_true_tensor));
+   DataSet	*dataset_pos	= new DataSet(file.createDataSet("Position", PredType::NATIVE_DOUBLE, *space_vector));
+   DataSet	*dataset_vel	= new DataSet(file.createDataSet("Velocity", PredType::NATIVE_DOUBLE, *space_vector));
+   DataSet	*dataset_psize	= new DataSet(file.createDataSet("Psize", PredType::NATIVE_DOUBLE, *space_vector));
+   DataSet	*dataset_s		= new DataSet(file.createDataSet("Stress", PredType::NATIVE_DOUBLE, *space_tensor));
+   DataSet	*dataset_td		= new DataSet(file.createDataSet("Derformation_Tensor", PredType::NATIVE_DOUBLE, *space_true_tensor));
 
-    DataSet	*dataset_szz		= new DataSet(file.createDataSet("SZZ", PredType::NATIVE_DOUBLE, *space_scalar));
+   DataSet	*dataset_szz		= new DataSet(file.createDataSet("SZZ", PredType::NATIVE_DOUBLE, *space_scalar));
 
 	dataset_tag->write(tag_h5, PredType::NATIVE_DOUBLE);
 	dataset_m->write(m_h5, PredType::NATIVE_DOUBLE);
@@ -1394,48 +1444,48 @@ inline void MPM::WriteFileH5(int n)
 
 	string file_name_xmf = "MPM_"+out.str()+".xmf";
 
-    std::ofstream oss;
-    oss.open(file_name_xmf);
-    oss << "<?xml version=\"1.0\" ?>\n";
-    oss << "<!DOCTYPE Xdmf SYSTEM \"Xdmf.dtd\" []>\n";
-    oss << "<Xdmf Version=\"2.0\">\n";
-    oss << " <Domain>\n";
-    oss << "   <Grid Name=\"MPM\" GridType=\"Uniform\">\n";
-    oss << "     <Topology TopologyType=\"Polyvertex\" NumberOfElements=\"" << Lp.size() << "\"/>\n";
-    oss << "     <Geometry GeometryType=\"XYZ\">\n";
-    oss << "       <DataItem Format=\"HDF\" NumberType=\"Float\" Precision=\"4\" Dimensions=\"" << Lp.size() << " 3\" >\n";
-    oss << "        " << file_name_h5 <<":/Position \n";
-    oss << "       </DataItem>\n";
-    oss << "     </Geometry>\n";
-    oss << "     <Attribute Name=\"Tag\" AttributeType=\"Scalar\" Center=\"Node\">\n";
-    oss << "       <DataItem Dimensions=\"" << Lp.size() << "\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
-    oss << "        " << file_name_h5 <<":/Tag \n";
-    oss << "       </DataItem>\n";
-    oss << "     </Attribute>\n";
-    oss << "     <Attribute Name=\"Vol\" AttributeType=\"Scalar\" Center=\"Node\">\n";
-    oss << "       <DataItem Dimensions=\"" << Lp.size() << "\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
-    oss << "        " << file_name_h5 <<":/Vol \n";
-    oss << "       </DataItem>\n";
-    oss << "     </Attribute>\n";
-    oss << "     <Attribute Name=\"SZZ\" AttributeType=\"Scalar\" Center=\"Node\">\n";
-    oss << "       <DataItem Dimensions=\"" << Lp.size() << "\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
-    oss << "        " << file_name_h5 <<":/SZZ \n";
-    oss << "       </DataItem>\n";
-    oss << "     </Attribute>\n";
-    oss << "     <Attribute Name=\"Velocity\" AttributeType=\"Vector\" Center=\"Node\">\n";
-    oss << "       <DataItem Dimensions=\"" << Lp.size() << " 3\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
-    oss << "        " << file_name_h5 <<":/Velocity\n";
-    oss << "       </DataItem>\n";
-    oss << "     </Attribute>\n";
-    oss << "     <Attribute Name=\"Stress\" AttributeType=\"Tensor6\" Center=\"Node\">\n";
-    oss << "       <DataItem Dimensions=\"" << Lp.size() << " 6\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
-    oss << "        " << file_name_h5 <<":/Stress\n";
-    oss << "       </DataItem>\n";
-    oss << "     </Attribute>\n";
-    oss << "   </Grid>\n";
-    oss << " </Domain>\n";
-    oss << "</Xdmf>\n";
-    oss.close();
+   std::ofstream oss;
+   oss.open(file_name_xmf);
+   oss << "<?xml version=\"1.0\" ?>\n";
+   oss << "<!DOCTYPE Xdmf SYSTEM \"Xdmf.dtd\" []>\n";
+   oss << "<Xdmf Version=\"2.0\">\n";
+   oss << " <Domain>\n";
+   oss << "   <Grid Name=\"MPM\" GridType=\"Uniform\">\n";
+   oss << "     <Topology TopologyType=\"Polyvertex\" NumberOfElements=\"" << Lp.size() << "\"/>\n";
+   oss << "     <Geometry GeometryType=\"XYZ\">\n";
+   oss << "       <DataItem Format=\"HDF\" NumberType=\"Float\" Precision=\"4\" Dimensions=\"" << Lp.size() << " 3\" >\n";
+   oss << "        " << file_name_h5 <<":/Position \n";
+   oss << "       </DataItem>\n";
+   oss << "     </Geometry>\n";
+   oss << "     <Attribute Name=\"Tag\" AttributeType=\"Scalar\" Center=\"Node\">\n";
+   oss << "       <DataItem Dimensions=\"" << Lp.size() << "\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
+   oss << "        " << file_name_h5 <<":/Tag \n";
+   oss << "       </DataItem>\n";
+   oss << "     </Attribute>\n";
+   oss << "     <Attribute Name=\"Vol\" AttributeType=\"Scalar\" Center=\"Node\">\n";
+   oss << "       <DataItem Dimensions=\"" << Lp.size() << "\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
+   oss << "        " << file_name_h5 <<":/Vol \n";
+   oss << "       </DataItem>\n";
+   oss << "     </Attribute>\n";
+   oss << "     <Attribute Name=\"SZZ\" AttributeType=\"Scalar\" Center=\"Node\">\n";
+   oss << "       <DataItem Dimensions=\"" << Lp.size() << "\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
+   oss << "        " << file_name_h5 <<":/SZZ \n";
+   oss << "       </DataItem>\n";
+   oss << "     </Attribute>\n";
+   oss << "     <Attribute Name=\"Velocity\" AttributeType=\"Vector\" Center=\"Node\">\n";
+   oss << "       <DataItem Dimensions=\"" << Lp.size() << " 3\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
+   oss << "        " << file_name_h5 <<":/Velocity\n";
+   oss << "       </DataItem>\n";
+   oss << "     </Attribute>\n";
+   oss << "     <Attribute Name=\"Stress\" AttributeType=\"Tensor6\" Center=\"Node\">\n";
+   oss << "       <DataItem Dimensions=\"" << Lp.size() << " 6\" NumberType=\"Float\" Precision=\"4\" Format=\"HDF\">\n";
+   oss << "        " << file_name_h5 <<":/Stress\n";
+   oss << "       </DataItem>\n";
+   oss << "     </Attribute>\n";
+   oss << "   </Grid>\n";
+   oss << " </Domain>\n";
+   oss << "</Xdmf>\n";
+   oss.close();
 }
 
 // inline void MPM::WriteFileH5(int n)

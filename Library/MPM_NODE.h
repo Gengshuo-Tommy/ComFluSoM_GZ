@@ -17,7 +17,9 @@ public:
 	size_t 							Level; 				    	// Level of the node, 0 for basic node, 1 for level 1 refined node
 
 	double							M;							// Mass
+	double                          Mp;                         // Porous mass
 	double							Vol;						// Volume
+	double                          Poro;                       // Porosity
 	double 							Mu;							// Friction coefficient
 
 	Vector3d						X;							// Position
@@ -50,6 +52,8 @@ inline MPM_NODE::MPM_NODE()
 	ID 		= 0;
 	Level 	= 0;
 	M 		= 0.;
+	Mp      = 0.;
+	Poro    = 0.;
 	Vol 	= 1.;
 	X 		= Vector3d::Zero();
 	V 		= Vector3d::Zero();
@@ -74,6 +78,8 @@ inline MPM_NODE::MPM_NODE(size_t level, const Vector3d& x)
 	ID 		= 0;
 	Level 	= level;
 	M 		= 0.;
+	Mp      = 0.;
+	Poro    = 0.;
 	Vol 	= 1.;
 	X 		= x;
 	V 		= Vector3d::Zero();

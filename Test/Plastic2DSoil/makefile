@@ -6,7 +6,7 @@ LFLAGS = -lhdf5_serial -lhdf5_cpp -fopenmp
 
 INCLUDES = -I /usr/include/hdf5/serial/ -I $(TComFluSoM)/Library -I /usr/include/eigen3/
 
-TARGET = Plastic2D
+TARGET = Plastic2DSoil
 
 all: $(TARGET)
 

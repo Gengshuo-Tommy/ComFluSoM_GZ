@@ -21,33 +21,26 @@ class MPM_PARTICLE
 {
 public:
 	MPM_PARTICLE();
-	// MPM_PARTICLE(int type, const Vector3d& x, double m, double young, double poisson);
-	MPM_PARTICLE(int tag, const Vector3d& x, double m);
+	MPM_PARTICLE(int tag, const Vector3d& x, double rho_input);
 	void Elastic(Matrix3d& de);
 	void SetElastic(double young, double poisson);
-	void SetNewtonian(double miu);
-	void SetGranular(double young, double poisson);
-	void SetMohrCoulomb(double young, double poisson, double phi, double psi, double c);
+	void SetGranular(double young, double poisson, double rho_input, double d_input, double phi_input);
 	void SetDruckerPrager(int dptype, double young, double poisson, double phi, double psi, double c);
 	void SetTensionCutoff(double pmax);
-	void Newtonian(Matrix3d& de);
+	void CalcState(double &gdp, double &p, double &eta_in, double &phi_in, double &I_out, double &Iv_out, double &Im_out, double &mu_out, double &phi_eq, double &beta_out);
 	void Granular(Matrix3d& de,  Matrix3d& dw);
-	void MohrCoulomb(Matrix3d& de);
 	void DruckerPrager(Matrix3d& de);
-	void EOSMorris(double C);
-	void EOSMonaghan(double C);
-	// void DruckerPrager(Matrix3d de);
 
     int 						Type;                       // Type of particle, 0 for elastic 1 for fluid 2 for soil.
 	int 						ID; 				    	// Index of particle in the list 
 	int 						Tag;				    	// Tag of particle
 
-	double 						M;				            // Mass
+	double 						Rhos;				        // Particle density
 	double 						Vol;						// Volume
 	double 						Vol0;						// Init Volume
 	double 						R;							// Radius for DEMPM
 	double 						Arc;						// Arc length for boundary nodes
-
+// Parameters for Drucker Prager constitutive laws ============================================
 	double 						Mu;							// Shear modulus (Lame's second parameter) or viscosity for fluid
 	double						La;							// Lame's first parameter
 	double 						K;							// bulk modulus
@@ -63,15 +56,28 @@ public:
 	double 						Pmax;						// Drucker–Prager parameters for tension cutoff (max pressure)
 	bool 						TensionCut;					// Drucker–Prager parameters for tension cutoff
 
-	double						Porosity;
-	double 						P;							// Pressure of fluid or granular materials
-// == parameters for μ(I) rheology ======================================================
-	double 						Rhop;						// Density of granular particles (not macro density of granular materials)
-	double 						Diameterp;					// Diameter of granular particles
-	double 						Mius;
-	double 						Miud;
-	double 						I0;
+// Parameters for Inertial Rheology model ======================================================
+	double 						grains_d;				    // Density of granular particles (not macro density of granular materials)
+	double 						grains_rho;					// Diameter of granular particles
+	double                      phi;                        // Solid packing fraction
+	double                      phi_m;                      // Maximum packing fraction
+	double                      phi_eq;                     // Equilibrium packing fraction
+	double 						eta;                        // Water viscosity                   
+	double 						I_tr;                       // Inertial number
+	double 						I_v_tr;                     // Viscous inertial number
+	double                      I_m_tr;                     // Mixed inertial number
+	double                      I_0;                        
+	double                      mu_1;                       
+	double                      mu_2;                       
+	double                      mu;                     
+	double                      a;
+	double                      K_3;      
+	double                      gammap_dot_tr;              // Equivalent plastic shear strain      
 // ======================================================================================
+	double                      Poro;                       // Solid phase porosity
+	double                      PoroInit;                   // Initial solid phase porosity
+	double                      P;                          // Granular Pressure
+
 	Vector3d					PSize0;						// Vector of half length of particle domain at init
 	Vector3d					PSize;						// Vector of half length of particle domain
 
@@ -110,7 +116,8 @@ inline MPM_PARTICLE::MPM_PARTICLE()
     Type	= -1;
 	ID		= 0;
 	Tag		= 0;
-	M 		= 0.;
+	Rhos    = 0.;
+	Vol     = 0.;
 	X 		= Vector3d::Zero();
 	X0 		= Vector3d::Zero();
 	V 		= Vector3d::Zero();
@@ -135,62 +142,17 @@ inline MPM_PARTICLE::MPM_PARTICLE()
 	Removed	= false;
 }
 
-// inline MPM_PARTICLE::MPM_PARTICLE(int type, const Vector3d& x, double m, double young, double poisson)
-// {
-//     Type	= type;
-// 	ID		= 0;
-// 	Tag		= 0;
-// 	M 		= m;
-// 	X 		= x;
-// 	X0 		= x;
-// 	V 		= Vector3d::Zero();
-// 	Vf 		= Vector3d::Zero();
-// 	B 		= Vector3d::Zero();
-// 	Fh 		= Vector3d::Zero();
-// 	Nor 	= Vector3d::Zero();
-
-// 	Strain 	= Matrix3d::Zero();
-// 	StrainP = Matrix3d::Zero();
-// 	Stress 	= Matrix3d::Zero();
-// 	F 		= Matrix3d::Identity();
-
-// 	Lni.resize(0);
-// 	LnN.resize(0);
-// 	LnGN.resize(0);
-
-// 	FixV	= false;
-// 	Removed	= false;
-
-// 	Young 	= young;
-// 	Poisson = poisson;
-
-// 	Mu 		= 0.5*Young/(1.+Poisson);
-// 	La 		= Young*Poisson/(1.+Poisson)/(1.-2.*Poisson);
-// 	K 		= La+2./3.*Mu;
-// 	H 		= 0.;
-// 	Dp(0,0) = Dp(1,1) = Dp(2,2) = La+2.*Mu;
-// 	Dp(0,1) = Dp(1,0) = Dp(0,2) = Dp(2,0) = Dp(1,2) = Dp(2,1) = La;
-
-// 	Dpi = Dp.inverse();
-
-// 	// Matrix3d dpi;
-// 	// dpi(0,0) = dpi(1,1) = dpi(2,2) = 1/Young;
-// 	// dpi(0,1) = dpi(1,0) = dpi(0,2) = dpi(2,0) = dpi(1,2) = dpi(2,1) = -Poisson/Young;
-
-// 	// cout << Dpi << endl;
-// 	// cout << "========" << endl;
-// 	// cout << dpi << endl;
-// 	// abort();
-// }
-
-inline MPM_PARTICLE::MPM_PARTICLE(int tag, const Vector3d& x, double m)
+inline MPM_PARTICLE::MPM_PARTICLE(int tag, const Vector3d& x, double rho_input)
 {
     Type	= -1;
 	ID		= 0;
 	Tag		= tag;
-	M 		= m;
+	Rhos    = rho_input;
 	X 		= x;
 	X0 		= x;
+	Poro    = 0.0;
+	PoroInit= 0.5;
+	Vol     = 0.0;
 	V 		= Vector3d::Zero();
 	Vf 		= Vector3d::Zero();
 	B 		= Vector3d::Zero();
@@ -224,29 +186,6 @@ inline void MPM_PARTICLE::SetElastic(double young, double poisson)
 	Dp(0,0) = Dp(1,1) = Dp(2,2) = La+2.*Mu;
 	Dp(0,1) = Dp(1,0) = Dp(0,2) = Dp(2,0) = Dp(1,2) = Dp(2,1) = La;
 	Dpi = Dp.inverse();
-}
-
-inline void MPM_PARTICLE::SetNewtonian(double miu)
-{
-	Type 	= 1;
-	Mu 		= miu;
-}
-
-inline void MPM_PARTICLE::SetMohrCoulomb(double young, double poisson, double phi, double psi, double c)
-{
-	Type 	= 2;
-	Young 	= young;
-	Poisson = poisson;
-	Mu 		= 0.5*Young/(1.+Poisson);
-	La 		= Young*Poisson/(1.+Poisson)/(1.-2.*Poisson);
-	K 		= La+2./3.*Mu;
-	H 		= 0.;
-	Dp(0,0) = Dp(1,1) = Dp(2,2) = La+2.*Mu;
-	Dp(0,1) = Dp(1,0) = Dp(0,2) = Dp(2,0) = Dp(1,2) = Dp(2,1) = La;
-	Dpi 	= Dp.inverse();
-	Phi 	= phi;
-	Psi 	= psi;
-	C 		= c;
 }
 
 inline void MPM_PARTICLE::SetDruckerPrager(int dptype, double young, double poisson, double phi, double psi, double c)
@@ -303,151 +242,7 @@ inline void MPM_PARTICLE::Elastic(Matrix3d& de)
 	Stress += 2.*Mu*de + La*de.trace()*Matrix3d::Identity();
 }
 
-// Newtonian fluid model
-inline void MPM_PARTICLE::Newtonian(Matrix3d& de)
-{
-	Stress = 2.*Mu*(de - de.trace()/3.*Matrix3d::Identity()) - P*Matrix3d::Identity();
-}
-
-void MPM_PARTICLE::EOSMorris(double Cs)
-{
-	P = Cs*Cs*M/Vol;
-}
-
-void MPM_PARTICLE::EOSMonaghan(double Cs)
-{
-	P = Cs*Cs*M/Vol0/7.*(pow(Vol0/Vol,7.)-1.);
-}
-
-inline void MPM_PARTICLE::MohrCoulomb(Matrix3d& de)
-{
-	// Apply elastic model first
-	Elastic(de);
-	SelfAdjointEigenSolver<Matrix3d> eigensolver(Stress);
-
-	double s1 = eigensolver.eigenvalues()(2);
-	double s2 = eigensolver.eigenvalues()(1);
-	double s3 = eigensolver.eigenvalues()(0);
-
-	Vector3d sb (s1, s2, s3);
-
-	double sin0 = sin(Phi);
-	double cos0 = cos(Phi);
-	double sin1 = sin(Psi);
-	// double cos1 = cos(Psi);
-
-	double f = (s1-s3) +(s1+s3)*sin0 -2.*C*cos0;	
-
-	if (f>1.e-18)
-	{
-		Matrix3d v0;
-		v0.col(0) = eigensolver.eigenvectors().col(2);
-		v0.col(1) = eigensolver.eigenvectors().col(1);
-		v0.col(2) = eigensolver.eigenvectors().col(0);
-
-		Vector3d sc;
-
-		double sin01 = sin0*sin1;
-		double qA0 = (8.*Mu/3.-4.*K)*sin01;
-		double qA1 = Mu*(1.+sin0)*(1.+sin1);
-		double qA2 = Mu*(1.-sin0)*(1.-sin1);
-		double qB0 = 2.*C*cos0;
-
-		double gsl = 0.5*(s1-s2)/(Mu*(1.+sin1));
-		double gsr = 0.5*(s2-s3)/(Mu*(1.-sin1));
-		double gla = 0.5*(s1+s2-2.*s3)/(Mu*(3.-sin1));
-		double gra = 0.5*(2.*s1-s2-s3)/(Mu*(3.+sin1));
-
-		double qsA = qA0-4.*Mu*(1.+sin01);
-		double qsB = f;
-		
-		double qlA = qA0-qA1-2.*qA2;
-		double qlB = 0.5*(1.+sin0)*(s1+s2)-(1.-sin0)*s3-qB0;
-
-		double qrA = qA0-2.*qA1-qA2;
-		double qrB = (1.+sin0)*s1 - 0.5*(1.-sin0)*(s2+s3) - qB0;
-
-		double qaA = -4.*K*sin01;
-		double qaB = 2.*(s1+s2+s3)/3.*sin0 - qB0;
-
-		double minslsr = min(gsl,gsr);
-		double maxlara = max(gla,gra);
-
-		if (minslsr>0. && qsA*minslsr+qsB<0.)
-		{
-			double dl = -qsB/qsA;
-			double ds0 = -dl*(2.*K-4.*Mu/3.)*sin1;
-			sc(0) = s1+ds0-dl*(2.*Mu*(1.+sin1));
-			sc(1) = s2+ds0;
-			sc(2) = s3+ds0+dl*(2.*Mu*(1.-sin1));
-		}
-		else if (gsl>0. && gla>=gsl && qlA*gsl+qlB>=0. && qlA*gla+qlB<=0.)
-		{
-			// return left edge
-			double dl = -qlB/qlA;
-			double ds0 = dl*(4.*Mu/3.-2.*K)*sin1;
-			sc(0) = sc(1) = 0.5*(s1+s2)+ds0 - dl*Mu*(1.+sin1);
-			sc(2) = s3+ds0 + 2.*dl*Mu*(1.-sin1);
-			// cout << "left edge" << endl;
-			// abort();
-		}
-		else if (gsr>0. && gra>=gsr && qrA*gsr+qrB>=0. && qrA*gra+qrB<=0.)
-		{
-			double dl = -qrB/qrA;
-			double ds0 = dl*(4.*Mu/3.-2.*K)*sin1;
-			sc(0) = s1 + ds0 - 2.*dl*Mu*(1.+sin1);
-			sc(1) = sc(2) = 0.5*(s2+s3) + ds0 + dl*Mu*(1.-sin1);
-			// cout << "right edge" << endl;
-		}
-		else if (maxlara>0. && qaA*maxlara+qaB>=-1.e-24)
-		{
-			sc(0) = sc(1) = sc(2) = C/tan(Phi);
-			// cout << "apex" << endl;
-		}
-		else
-		{
-			cout << "undefined" << endl;
-			cout << s1 << " " << s2 << " " << s3 << endl;
-			cout << "minslsr:" << minslsr << endl;
-			cout << "qsA*minslsr+qsB: " << qsA*minslsr+qsB << endl;
-			cout << "===============" << endl;
-			cout << "gsl: " << gsl << endl;
-			cout << "gla: " << gla << endl;
-			cout << "qlA*gsl+qlB: " << qlA*gsl+qlB << endl;
-			cout << "qlA*gla+qlB: " << qlA*gla+qlB << endl;
-			cout << "===============" << endl;
-			cout << "gsr: " << gsr << endl;
-			cout << "gra: " << gra << endl;
-			cout << "qrA*gsr+qrB: " << qrA*gsr+qrB << endl;
-			cout << "qrA*gra+qrB: " << qrA*gra+qrB << endl;	
-			cout << "===============" << endl;		
-			cout << "maxlara " << maxlara << endl;
-			cout << "qaA*maxlara+qaB: " << qaA*maxlara+qaB << endl;
-			cout << "f: " << f << endl;
-			abort();
-		}
-
-		Matrix3d sp = Matrix3d::Zero();
-		sp(0,0) = sc(0);
-		sp(1,1) = sc(1);
-		sp(2,2) = sc(2);
-
-		Stress = v0 * sp * v0.inverse();
-		double fa = (sc(0)-sc(2)) +(sc(0)+sc(2))*sin0 -2.*C*cos0;
-		if (abs(fa)>1.0e-12)
-		{
-			cout << "f before: " << f << endl;
-			cout << "f after: " << fa << endl;
-			cout << sc.transpose() << endl;
-			cout << "ID: " << ID << endl;
-			cout << "X: " << X.transpose() << endl;
-			cout << "V: " << V.transpose() << endl;
-			abort();			
-		}
-	}
-}
-
-void MPM_PARTICLE::DruckerPrager(Matrix3d& de)
+inline void MPM_PARTICLE::DruckerPrager(Matrix3d& de)
 {
 	// Apply elastic model first
 	Elastic(de);
@@ -483,7 +278,7 @@ void MPM_PARTICLE::DruckerPrager(Matrix3d& de)
 }
 
 // Set granular parameters
-inline void MPM_PARTICLE::SetGranular(double young, double poisson)
+inline void MPM_PARTICLE::SetGranular(double young, double poisson, double rho_input, double d_input, double phi_input)
 {
 	Type 	= 5;
 	Young 	= young;
@@ -491,15 +286,71 @@ inline void MPM_PARTICLE::SetGranular(double young, double poisson)
 	Mu 		= 0.5*Young/(1.+Poisson);
 	La 		= Young*Poisson/(1.+Poisson)/(1.-2.*Poisson);
 	K 		= La+2./3.*Mu;
+
+	phi     = 0.6;
+	phi_m   = 0.584;
+	phi_eq  = 0.0;
+	eta     = 0.0;
+	I_tr    = 0.0;
+	I_v_tr  = 0.0;
+	I_m_tr  = 0.0;
+	I_0     = 0.3085;
+	mu_1    = 0.35;
+	mu_2    = 1.387;
+	mu      = 0.0;
+	a       = 1.23;
+	K_3     = 4.715;
+	gammap_dot_tr = 0.0;
+
+	grains_d   = d_input;
+	grains_rho = rho_input;
+
+	return;
 }
 
-// Newtonian fluid model
+// Calculate beta
+inline void MPM_PARTICLE::CalcState(double &gdp, double &p, double &eta_in, double &phi_in, double &I_out, double &Iv_out, double &Im_out, double &mu_out, double &phi_eq, double &beta_out)
+{
+	I_out  = gdp * grains_d * sqrt(grains_rho/p);
+    Iv_out = gdp * eta_in / p;
+    Im_out = sqrt(I_out * I_out + 2 * Iv_out);
+
+    if (Im_out == 0){
+        mu_out = mu_1;
+    } else if (p <= 0){
+        mu_out = mu_2;
+    } else {
+        mu_out = mu_1 + (mu_2 - mu_1)/(1 + I_0/Im_out) + 2.5 * phi_in * Iv_out/(a*Im_out);
+    }
+
+    if ( p <= 0) {
+        phi_eq = 0;
+    } else {
+        phi_eq = phi_m / (1 + a * Im_out);
+    }
+
+    beta_out = K_3 * (phi_in - phi_eq);
+
+    return;
+}
+
+
+// Granular material plastic deformation
 inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 {
 	Matrix3d T, D, W, T_tr;
-	double trD, tau_bar_tr, p_tr;
-	double tau_bar, p;
-	bool is_sovled;
+	int k, j;
+	double G, K;
+	double trD, tau_bar_k, tau_bar_tr, tau_bar, p_tr, p_k, p, beta;
+	double rp_max, rp_min, rt_max, rt_min, p_max, p_min, tau_max, tau_min, r_p, r_p_1, b_p, r_rt, b_rt;
+	double p_zero_strength_f1, phi_eq_final, ABS_TOL, REL_TOL;
+	bool is_solved, tau_too_large;
+
+	ABS_TOL = 1.0e-30;
+	REL_TOL = 1.0e-30;
+
+	G   = Mu;
+	K   = La;
 
 	T   = Stress;
 
@@ -510,44 +361,239 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 
 	// calculate trial stress
 	T_tr = T + 2 * Mu * D + La * trD * Matrix3d::Identity();
-	tau_bar_tr = (T_tr - (T_tr.trace() / 3.0) * Matrix3d::Identity()).norm() / std::sqrt(2.0);
+	tau_bar_tr = (T_tr - (T_tr.trace() / 3.0) * Matrix3d::Identity()).norm() / sqrt(2.0);
 	p_tr = -T_tr.trace() / 3.0;
 
 	// state determined
-	is_sovled = false;
+	is_solved     = false;
+	tau_too_large = false;
+
+	// initial value input
 	tau_bar   = tau_bar_tr;
 	p         = p_tr;
 
-	// set constant variables
-	double phi  = 0.8;
-	double phi_m = 0.584;
-	double mu_1 = 0.35;
-	double beta;
-
 	// check elasticity
-	if (!is_sovled)
+	if (!is_solved)
 	{
-		beta = phi - phi_m;
-		if ((p_tr >= 0) && (tau_bar_tr <= ((mu_1 + beta)*p_tr)) && (phi >= phi_m))
+		beta = K_3 *(phi - phi_m);
+
+		if ( (tau_bar_tr <= ((mu_1 + beta)*p_tr)) && (p_tr >= 0) && (phi >= phi_m) )
 		{
+			gammap_dot_tr = 0;
 			p = p_tr;
 			tau_bar = tau_bar_tr; 
-			is_sovled = true;
+			is_solved = true;  // Check elasticity, f1,f2 and f3 should all be less than 0
 		}
 	}
 
-	// zero strength limit on f1 only
-	if (!is_sovled)
+	// check f1&&f2 condition
+	if (!is_solved)
 	{
-		beta = phi - phi_m;
-		// set bisection to find maximum pressure0
+		beta  = K_3 * (phi - 0.0);
+		if ((p_tr + (K*tau_bar_tr/G)*beta) <= 0)
+		{
+			gammap_dot_tr = tau_bar_tr/ G;
+			p = 0;
+			tau_bar = 0;
+			is_solved = true; // Under f2 solution, f1 $ f2 are both equal to zero, f3 <= 0.
+		}
+	}
 
-		// at zero strength limit
-		beta    = phi - 0.0;
-		p_max   = p_tr + ;
+	// Calculate maximaum P for function f1
+	if (!is_solved){
+
+	    // set iteration time and initial p_k value
+		k   = 0;
+		p_k = 0.0;
+		// set bisection tolerance
+		beta  = K_3 * (phi - phi_m);
+		r_p_1 = max(abs(p_tr),abs(p_tr + (K*tau_bar_tr/G)*beta));
+		b_p   = r_p_1; 
+
+		// calculate bisection value at zero strength limit
+		beta    = K_3 * (phi - 0.0); // beta max
+		p_max   = p_tr + (K*tau_bar_tr/G)*beta; 
 		p_min   = 0.0;
-		tau_max = ;
-		tau_min = ;	
+
+		// calculate gammap_dot_tr at tau equals to zero
+		gammap_dot_tr = tau_bar_tr / G;
+
+		// calculate state for p max
+		CalcState(gammap_dot_tr, p_max, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+		// calculate residual for p_max
+		rp_max = p_max - p_tr - K*beta*gammap_dot_tr; // must higher than 0
+
+		// calculate state for p min
+		CalcState(gammap_dot_tr, p_min, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+		// calculate residual for p_max
+		rp_min = p_min - p_tr - K*beta*gammap_dot_tr; // must lower than 0 ..
+
+		// cout << "1  " << rp_max << endl;
+		// cout << "2  " << rp_min << endl;
+
+		if (rp_min * rp_max > 0){
+			cout << "ERROR: f1 weak residuals in binary search have same sign! That's bad!" << endl;
+		}
+
+		// bisection method
+		while ( abs(r_p_1) > ABS_TOL && abs(r_p_1) / abs(b_p) > REL_TOL ){
+			k += 1;
+			if (k >50)
+			{
+				break;
+			}
+
+			//binary search
+            p_k = 0.5*(p_max + p_min);
+
+            //calculate state for step
+            CalcState(gammap_dot_tr, p_k, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+            //calculate residual
+            r_p_1 = p_k - p_tr - K*beta*gammap_dot_tr;
+
+            //check residual sign
+            if (r_p_1 * rp_min > 0){
+                //r_p replaces r_min
+                rp_min = r_p_1;
+                p_min = p_k;
+            } else {
+                //r_p replaces r_max
+                rp_max = r_p_1;
+                p_max = p_k;
+            }
+		}
+
+		p_zero_strength_f1 = p_k; // Maximum p satisfied
+		// cout << "p_zero_strength_f1 ==" << p_zero_strength_f1 <<endl;
+	}
+
+	// // check f1 condition
+	if (!is_solved){
+		// initial residual
+		tau_bar_k = 0.0;
+		r_rt   = tau_bar_tr;
+		b_rt   = r_rt;
+
+		// use bisection for function f1
+		tau_max = tau_bar_tr;
+		tau_min = 0.0;
+
+		// initilize bisection
+		gammap_dot_tr = 0.0;
+		CalcState(gammap_dot_tr, p_tr,eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+		rt_max = tau_max - (mu + beta)*p_tr;
+
+		gammap_dot_tr = tau_bar_tr/G;
+		CalcState(gammap_dot_tr, p_zero_strength_f1, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+		rt_min = tau_min - (mu + beta)*p_zero_strength_f1;
+
+		if (rt_max*rt_min>0)
+		{
+			cout << "ERROR: f1 residuals in binary search have same sign! That's bad!" << endl;
+			abort();
+		}
+
+		tau_too_large = false;
+		k = 0;
+
+        while (abs(r_rt) > abs(b_rt)*REL_TOL && abs(r_rt) > ABS_TOL){
+        	k += 1;
+        	if (k > 50){
+        		break;
+        	}
+
+            beta = phi - phi_m; //high pressure limit
+            r_p  = max(abs(p_tr), abs( p_tr + (K * tau_bar_tr / G)*beta)); //reference
+            b_p  = r_p;
+
+            //set tau_bar_k
+            tau_bar_k = 0.5 * (tau_max + tau_min);
+
+            //calculate gammap_dot for tau going to zero
+            gammap_dot_tr = (tau_bar_tr - tau_bar_k) / G;
+
+            //calculate state for p_max
+            CalcState(gammap_dot_tr, p_max, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+            //calculate residual for p_max
+            rp_max = p_max - p_tr - K * beta * gammap_dot_tr;
+
+            //calculate state for p_min
+            CalcState(gammap_dot_tr, p_min, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+            //calculate residual for r_min
+            rp_min = p_min - p_tr - K * beta * gammap_dot_tr;
+
+            tau_too_large = false;
+            if (rp_min * rp_max > 0) 
+            {
+                tau_max = tau_bar_k;
+                tau_too_large = true;
+                r_p = 0;            
+            }
+
+            // bisection method
+            j = 0;
+            while (std::abs(r_p) > ABS_TOL and std::abs(r_p) / std::abs(b_p) > REL_TOL) {
+                j += 1;
+                if (j > 50){
+                	break;
+                }
+
+                //binary search
+                p_k = 0.5 * (p_max + p_min);
+
+                //calculate state for step
+                CalcState(gammap_dot_tr, p_k, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+                //calculate residual
+                r_p = p_k - p_tr - K * beta * gammap_dot_tr;
+
+                //check residual sign
+                if (r_p * rp_min > 0) {
+                    //r_p replaces r_min
+                    rp_min = r_p;
+                    p_min = p_k;
+                } else{
+                    //r_p replaces r_max
+                    rp_max = r_p;
+                    p_max = p_k;
+                }
+            }
+
+            if (!tau_too_large) {
+                //calculate equiv shear rate
+                gammap_dot_tr = (tau_bar_tr - tau_bar_k) / G;
+
+                //calculate state
+                CalcState(gammap_dot_tr, p_k, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+                //calculate residual
+                r_rt = tau_bar_k - (mu + beta) * p_k;
+
+                //check sign of residual
+                if (r_rt * rt_min > 0) {
+                    rt_min = r_rt;
+                    tau_min = tau_bar_k;
+                } else {
+                    rt_max = r_rt;
+                    tau_max = tau_bar_k;
+                }
+            }
+        }
+
+        gammap_dot_tr = (tau_bar_tr - tau_bar_k) / G;
+
+        phi_eq_final = phi_m / (1 + a*I_m_tr);
+
+        if ((phi >= phi_m) || ( phi >= phi_eq_final) ) {
+        	p = p_k;
+            tau_bar = tau_bar_k;
+            is_solved = true;
+        }
 
 	}
 
@@ -562,4 +608,6 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 	}
 
 	Stress = T;
+
+	return;
 }

@@ -13,6 +13,7 @@
 #include <chrono>
 #include <unordered_map>
 #include <random>
+#include <cstring>
 // #include <set>
 #include <H5Cpp.h>
 #include <hdf5.h>

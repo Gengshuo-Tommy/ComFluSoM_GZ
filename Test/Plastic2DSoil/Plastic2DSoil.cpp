@@ -20,18 +20,16 @@ int main(int argc, char const *argv[])
 	double PsiPhysical		= 5./180.*M_PI;		// Angle of dilatation
 	// double Mu               = 0.25;
 	// Space time and mass step
-	double dx  = 1.0e-1;						// unit [m]
-	double dt  = 1.0e-3;					    // unit [s]
-	double dkg = 1.0;		                    // unit [kg]
+	double dx  = 1.0e-2;						// unit [m]
+	double dt  = 1.0e-5;					    // unit [s]
 	// How many particles in a cell
 	double Ratio = 1./4.;
 	// Dimentionless parameters of particles
 	Vector3d G 		= GPhysical*dt*dt/dx;
-	double Rhos 	= rhosPhysical/dkg*dx*dx*dx;
-	double Mp       = Rhos*pow(Ratio,2);  
-	double Young 	= YoungPhysical*dx*dt*dt/dkg;
+	double Rhos 	= rhosPhysical*dx*dx*dx;
+	double Young 	= YoungPhysical*dx*dt*dt;
 	double Poisson 	= PoissonPhysical;
-	double C 		= CPhysical*dx*dt*dt/dkg;
+	double C 		= CPhysical*dx*dt*dt;
 	double Phi 		= PhiPhysical;      
 	double Psi 		= PsiPhysical;
 	double K0 		= Poisson/(1.-Poisson);
@@ -47,10 +45,10 @@ int main(int argc, char const *argv[])
 	x->MLSv = false;
 	// Initialization
 	x->Init();
-	x->AddBoxParticles(-1, x0, l0, Ratio, Mp);
+	x->AddBoxParticles(-1, x0, l0, Ratio, Rhos);
 
 	x->Nproc = 10;
-	x->Dc = 0.0;
+	x->Dc = 0.10;
 
 	// Define Mohr Coulomb parameters and gravity
 	for (size_t p=0; p<x->Lp.size(); ++p)

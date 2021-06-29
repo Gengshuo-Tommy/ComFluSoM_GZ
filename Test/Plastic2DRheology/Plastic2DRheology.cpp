@@ -17,10 +17,10 @@ int main(int argc, char const *argv[])
 	// Initialization
 	x->Init();
 	// Physcial parameters of particles
-	double RhosPhysical 	= 2500;			    // Physical density, unit [kg/m^3]
+	double RhosPhysical 	= 2600;			    // Physical density, unit [kg/m^3]
 	double RhosDiaPhysical  = 225e-6;           // Diameter [m]
 	Vector3d GPhysical (0., -9.8, 0.);			// Body force
-	double YoungPhysical 	= 7.5e4;			// Young's modus, unit [kg/(m*s^2)] (or Pa)
+	double YoungPhysical 	= 7.5e7;			// Young's modus, unit [kg/(m*s^2)] (or Pa)
 	double PoissonPhysical  = 0.3;				// Possion ratio
 
 	// Space time and mass step
@@ -30,20 +30,20 @@ int main(int argc, char const *argv[])
 	double Ratio = 1.0/4.0;
 	// Dementionless parameters of particles
 	Vector3d G 		= GPhysical*dt*dt/dx;
-	double Mp 		= RhosPhysical*pow(dx,3)*pow(Ratio,2);
 	double Rhos     = RhosPhysical*pow(dx,3);
 	double Rhos_Dia = RhosDiaPhysical/dx;
 	double Young 	= YoungPhysical*dx*dt*dt;
 	double Poisson 	= PoissonPhysical;
 	double Kcoe     = Poisson/(1 - Poisson);
+	// double Phi      = 0.6;
 	// Start point of the box for generating particles
 	Vector3d x0 (1,   1,  0);
 	// demention of the box
 	Vector3d l0 (40, 80,  0);
 	x->Nproc = 10;
-	x->Dc = 0.05;
+	x->Dc = 0.0;
 	// Generate a box of particles
-	x->AddBoxParticles(-1, x0, l0, Ratio, Mp);
+	x->AddBoxParticles(-1, x0, l0, Ratio, Rhos);
 	// Define gravity and parameters
 	for (size_t p=0; p<x->Lp.size(); ++p)
 	{
@@ -67,7 +67,9 @@ int main(int argc, char const *argv[])
 	for (int i = 0;  i <=  1;  ++i)
 	for (int j = 1;  j <= ny;  ++j)
 	{
-		x->SetNonSlippingBC(i,j,0);
+		// x->SetNonSlippingBC(i,j,0);
+		Vector3d norm (-1., 0, 0);
+		x->SetSlippingBC(i, j, 0, norm);
 	}
 
 	for (int i = 1;  i <= nx;  ++i)
@@ -87,7 +89,7 @@ int main(int argc, char const *argv[])
 			x->WriteFileH5(step);
 		}
 
-		x->ParticleToNodePoro();
+		x->ParticleToNode();
 
 		x->CalVOnNode();
 

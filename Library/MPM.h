@@ -239,28 +239,28 @@ void MPM::ParticleToNode()
    {
    	CalNGN(Lp[p]);
     	Matrix3d vsp = -Lp[p]->Vol*Lp[p]->Stress;
-		Vector3d fex = Lp[p]->Rhos*Lp[p]->Vol*Lp[p]->B + Lp[p]->Fh + Lp[p]->Fc;
+		Vector3d fex =  Lp[p]->Rhos*Lp[p]->Vol*Lp[p]->B + Lp[p]->Fh + Lp[p]->Fc;
 
 		for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
 		{
 			// Grid id
 			size_t id = Lp[p]->Lni[l];
 			// weight
-			double 		n 	= Lp[p]->LnN[l];
-			Vector3d 	gn 	= Lp[p]->LnGN[l];
-			Vector3d 	df 	= n*fex + vsp*gn;
+			double 		n 	 = Lp[p]->LnN[l];
+			Vector3d 	gn  = Lp[p]->LnGN[l];
+			Vector3d 	df  = n*fex + vsp*gn;
 			// weigthed mass contribution
-			double nm = n*Lp[p]->Rhos;
-			// if (nm<0.)
-			// {
-			// 	cout << "mass problem" << endl;
-			// 	cout << "nm= " << nm << endl;
-			// 	cout << "p= " << p << endl;
-			// 	cout << "id= " << id << endl;
-			// 	cout << "Lp[p]->X= " << Lp[p]->X.transpose() << endl;
-			// 	cout << "Ln[id]->X= " << Ln[id]->X.transpose() << endl;
-			// 	abort();
-			// }
+			double nm = n*Lp[p]->Rhos*Lp[p]->Vol;
+			if (nm<0.)
+			{
+				cout << "mass problem" << endl;
+				cout << "nm= " << nm << endl;
+				cout << "p= " << p << endl;
+				cout << "id= " << id << endl;
+				cout << "Lp[p]->X= " << Lp[p]->X.transpose() << endl;
+				cout << "Ln[id]->X= " << Ln[id]->X.transpose() << endl;
+				abort();
+			}
 			Vector3d ve = Lp[p]->V-Lp[p]->L*(Lp[p]->X-Ln[id]->X);
 			#pragma omp atomic
 			Ln[id]->M += nm;

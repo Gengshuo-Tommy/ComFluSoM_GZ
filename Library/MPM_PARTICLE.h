@@ -24,7 +24,7 @@ public:
 	MPM_PARTICLE(int tag, const Vector3d& x, double rho_input);
 	void Elastic(Matrix3d& de);
 	void SetElastic(double young, double poisson);
-	void SetGranular(double young, double poisson, double rho_input, double d_input, double phi_input);
+	void SetGranular(double young, double poisson, double rho_input, double d_input);
 	void SetDruckerPrager(int dptype, double young, double poisson, double phi, double psi, double c);
 	void SetTensionCutoff(double pmax);
 	void CalcState(double &gdp, double &p, double &eta_in, double &phi_in, double &I_out, double &Iv_out, double &Im_out, double &mu_out, double &phi_eq, double &beta_out);
@@ -278,7 +278,7 @@ inline void MPM_PARTICLE::DruckerPrager(Matrix3d& de)
 }
 
 // Set granular parameters
-inline void MPM_PARTICLE::SetGranular(double young, double poisson, double rho_input, double d_input, double phi_input)
+inline void MPM_PARTICLE::SetGranular(double young, double poisson, double rho_input, double d_input)
 {
 	Type 	= 5;
 	Young 	= young;
@@ -470,7 +470,7 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 		// cout << "p_zero_strength_f1 ==" << p_zero_strength_f1 <<endl;
 	}
 
-	// // check f1 condition
+	// check f1 condition
 	if (!is_solved){
 		// initial residual
 		tau_bar_k = 0.0;

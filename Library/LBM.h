@@ -1,5 +1,4 @@
-#include "../HEADER.h"
-#include <cstring>
+#include <HEADER.h>
 
 // discrete model
 enum DnQm
@@ -96,6 +95,7 @@ public:
 	double*** 						Rho;													// Fluid density
 	double*** 						Source;													// Source term for CDE
 	double***						Omega;													// Reversed Tua for variable viscosities
+	double***                       Ns;                                                     // Darcy Coefficient
 	double****	 					G;														// Flag of lattice type
 	vector<size_t>***		 		Flag;													// Flag of lattice type
 	Vector3d***						V;														// Fluid velocity
@@ -372,6 +372,7 @@ inline void LBM::Init(double rho0, Vector3d initV)
     Rho0 	= rho0;
 	Rho		= new double**  [Nx+1];
 	Omega	= new double**  [Nx+1];
+	Ns      = new double**  [Nx+1];
 	G		= new double***	[Nx+1];
 	Flag 	= new vector<size_t>** [Nx+1];
 	V		= new Vector3d**[Nx+1];
@@ -383,6 +384,7 @@ inline void LBM::Init(double rho0, Vector3d initV)
 	{
 		Rho    [i]	= new double*  [Ny+1];
 		Omega  [i]	= new double*  [Ny+1];
+		Ns     [i]  = new double*  [Ny+1];
 		G      [i]	= new double** [Ny+1];
 		Flag   [i]  = new vector<size_t>* [Ny+1];
 		V      [i]	= new Vector3d*[Ny+1];
@@ -394,6 +396,7 @@ inline void LBM::Init(double rho0, Vector3d initV)
 		{
 			Rho    [i][j]	= new double  [Nz+1];
 			Omega  [i][j]	= new double  [Nz+1];
+			Ns     [i][j]   = new double  [Nz+1];
 			G      [i][j]	= new double* [Nz+1];
 			Flag   [i][j]	= new vector<size_t> [Nz+1];
 			V      [i][j]	= new Vector3d[Nz+1];
@@ -405,6 +408,7 @@ inline void LBM::Init(double rho0, Vector3d initV)
 			{
 				Rho    [i][j][k]	= Rho0;
 				Omega  [i][j][k]	= Omega0;
+				Ns     [i][j][k]    = 0.0;
 				G      [i][j][k]	= new double[4];
 				Flag   [i][j][k].resize(0);
 				V      [i][j][k]	= initV;
@@ -1016,14 +1020,14 @@ inline void LBM::StreamGLBM()
 	for (int j=0; j<=Ny; ++j)
 	for (int k=0; k<=Nz; ++k)
 	{
-		double ns = G[i][j][k][0];
+		// double ns = G[i][j][k][0];
 		for (size_t q=0; q<Q; ++q)
 		{
 			int ip = (i- (int) E[q][0]+Nx+1)%(Nx+1);
 			int jp = (j- (int) E[q][1]+Ny+1)%(Ny+1);
 			int kp = (k- (int) E[q][2]+Nz+1)%(Nz+1);
 
-			F[i][j][k](q) = (1.-ns)*Ft[ip][jp][kp][q] + ns*Ft[ip][jp][kp](Op[q]);
+			F[i][j][k](q) = (1.-Ns[i][j][k])*Ft[ip][jp][kp][q] + Ns[i][j][k]*Ft[ip][jp][kp](Op[q]);
 		}
 	}
 }

@@ -82,7 +82,7 @@ int main(int argc, char const *argv[])
 	// Solve
 	for (int step = 0; step <= 50000; ++step)
 	{
-		if (step % 1000 == 0) // output the file per 100 times
+		if (step % 10 == 0) // output the file per 100 times
 		{
 			cout<<"step == "<<step<<endl;
 			cout<<"=============="<<endl;

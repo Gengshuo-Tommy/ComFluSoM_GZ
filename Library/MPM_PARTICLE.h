@@ -24,7 +24,7 @@ public:
 	MPM_PARTICLE(int tag, const Vector3d& x, double rho_input);
 	void Elastic(Matrix3d& de);
 	void SetElastic(double young, double poisson);
-	void SetGranular(double young, double poisson, double rho_input, double d_input);
+	void SetGranular(double young, double poisson, double rho_input, double d_input, double poro_init);
 	void SetDruckerPrager(int dptype, double young, double poisson, double phi, double psi, double c);
 	void SetTensionCutoff(double pmax);
 	void CalcState(double &gdp, double &p, double &eta_in, double &phi_in, double &I_out, double &Iv_out, double &Im_out, double &mu_out, double &phi_eq, double &beta_out);
@@ -150,8 +150,8 @@ inline MPM_PARTICLE::MPM_PARTICLE(int tag, const Vector3d& x, double rho_input)
 	Rhos    = rho_input;
 	X 		= x;
 	X0 		= x;
-	Poro    = 0.0;
-	PoroInit= 0.5;
+	Poro    = 0.4;
+	PoroInit= 0.4;
 	Vol     = 0.0;
 	V 		= Vector3d::Zero();
 	Vf 		= Vector3d::Zero();
@@ -278,7 +278,7 @@ inline void MPM_PARTICLE::DruckerPrager(Matrix3d& de)
 }
 
 // Set granular parameters
-inline void MPM_PARTICLE::SetGranular(double young, double poisson, double rho_input, double d_input)
+inline void MPM_PARTICLE::SetGranular(double young, double poisson, double rho_input, double d_input, double poro_init)
 {
 	Type 	= 5;
 	Young 	= young;
@@ -287,7 +287,9 @@ inline void MPM_PARTICLE::SetGranular(double young, double poisson, double rho_i
 	La 		= Young*Poisson/(1.+Poisson)/(1.-2.*Poisson);
 	K 		= La+2./3.*Mu;
 
-	phi     = 0.6;
+	PoroInit= poro_init;
+	Poro    = poro_init;
+	phi     = 0.0;
 	phi_m   = 0.584;
 	phi_eq  = 0.0;
 	eta     = 0.0;
@@ -343,7 +345,7 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 	double G, K;
 	double trD, tau_bar_k, tau_bar_tr, tau_bar, p_tr, p_k, p, beta;
 	double rp_max, rp_min, rt_max, rt_min, p_max, p_min, tau_max, tau_min, r_p, r_p_1, b_p, r_rt, b_rt;
-	double p_zero_strength_f1, phi_eq_final, ABS_TOL, REL_TOL;
+	double p_zero_strength_f1, p_zero_strength_f1f3, phi_eq_final,  ABS_TOL, REL_TOL;
 	bool is_solved, tau_too_large;
 
 	ABS_TOL = 1.0e-30;
@@ -359,6 +361,9 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 
 	trD = D.trace();
 
+	// update solid fraction
+	phi = 1 - Poro;
+
 	// calculate trial stress
 	T_tr = T + 2 * Mu * D + La * trD * Matrix3d::Identity();
 	tau_bar_tr = (T_tr - (T_tr.trace() / 3.0) * Matrix3d::Identity()).norm() / sqrt(2.0);
@@ -373,8 +378,7 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 	p         = p_tr;
 
 	// check elasticity
-	if (!is_solved)
-	{
+	if (!is_solved){
 		beta = K_3 *(phi - phi_m);
 
 		if ( (tau_bar_tr <= ((mu_1 + beta)*p_tr)) && (p_tr >= 0) && (phi >= phi_m) )
@@ -387,8 +391,7 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 	}
 
 	// check f1&&f2 condition
-	if (!is_solved)
-	{
+	if (!is_solved){
 		beta  = K_3 * (phi - 0.0);
 		if ((p_tr + (K*tau_bar_tr/G)*beta) <= 0)
 		{
@@ -399,7 +402,7 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 		}
 	}
 
-	// Calculate maximaum P for function f1
+	// calculate maximaum P for fi condtion
 	if (!is_solved){
 
 	    // set iteration time and initial p_k value
@@ -430,9 +433,6 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 		// calculate residual for p_max
 		rp_min = p_min - p_tr - K*beta*gammap_dot_tr; // must lower than 0 ..
 
-		// cout << "1  " << rp_max << endl;
-		// cout << "2  " << rp_min << endl;
-
 		if (rp_min * rp_max > 0){
 			cout << "ERROR: f1 weak residuals in binary search have same sign! That's bad!" << endl;
 		}
@@ -440,7 +440,7 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 		// bisection method
 		while ( abs(r_p_1) > ABS_TOL && abs(r_p_1) / abs(b_p) > REL_TOL ){
 			k += 1;
-			if (k >50)
+			if (k > 50)
 			{
 				break;
 			}
@@ -467,13 +467,154 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 		}
 
 		p_zero_strength_f1 = p_k; // Maximum p satisfied
-		// cout << "p_zero_strength_f1 ==" << p_zero_strength_f1 <<endl;
 	}
 
 	// check f1 condition
 	if (!is_solved){
 		// initial residual
 		tau_bar_k = 0.0;
+		p_k    = 0.0;
+		r_rt   = tau_bar_tr;
+		b_rt   = r_rt;
+
+		// use bisection for function f1
+        beta    = phi - 0.0;
+        p_max   = p_tr + (K*tau_bar_tr/G)*beta; 
+        p_min   = 0.0;
+		tau_max = tau_bar_tr;
+		tau_min = 0.0;
+
+		// initilize bisection
+		gammap_dot_tr = 0.0;
+		CalcState(gammap_dot_tr, p_tr, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+		rt_max = tau_max - (mu + beta)*p_tr;
+
+		gammap_dot_tr = tau_bar_tr/G;
+		CalcState(gammap_dot_tr, p_zero_strength_f1, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+		rt_min = tau_min - (mu + beta)*p_zero_strength_f1;
+
+		if (rt_max*rt_min>0)
+		{
+			is_solved = false;
+		}	
+		else{
+
+			tau_too_large = false;
+			k = 0;
+
+    		while (abs(r_rt) > abs(b_rt)*REL_TOL && abs(r_rt) > ABS_TOL){
+    			k += 1;
+    			if (k > 50){
+    				break;
+    			}
+
+	            beta = phi - phi_m; //high pressure limit
+	            r_p  = max(abs(p_tr), abs( p_tr + (K * tau_bar_tr / G)*beta)); //reference
+	            b_p  = r_p;
+
+	            //set tau_bar_k
+	            tau_bar_k = 0.5 * (tau_max + tau_min);
+
+	            //calculate gammap_dot for tau going to zero
+	            gammap_dot_tr = (tau_bar_tr - tau_bar_k) / G;
+
+	            //calculate state for p_max
+	            CalcState(gammap_dot_tr, p_max, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+	            //calculate residual for p_max
+	            rp_max = p_max - p_tr - K * beta * gammap_dot_tr;
+
+	            //calculate state for p_min
+	            CalcState(gammap_dot_tr, p_min, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+	            //calculate residual for r_min
+	            rp_min = p_min - p_tr - K * beta * gammap_dot_tr;
+
+	            tau_too_large = false;
+
+	            if (rp_min * rp_max > 0) 
+	            {
+	                tau_max = tau_bar_k;
+	                tau_too_large = true;
+	                r_p = 0;            
+	            }
+	            // bisection method
+	            j = 0;
+	            while (std::abs(r_p) > ABS_TOL and std::abs(r_p) / std::abs(b_p) > REL_TOL){
+	                j += 1;
+	                if (j > 50){
+	                	break;
+	                }
+
+	                //binary search
+	                p_k = 0.5 * (p_max + p_min);
+
+	                //calculate state for step
+	                CalcState(gammap_dot_tr, p_k, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+	                //calculate residual
+	                r_p = p_k - p_tr - K * beta * gammap_dot_tr;
+
+	                //check residual sign
+	                if (r_p * rp_min > 0) {
+	                    //r_p replaces r_min
+	                    rp_min = r_p;
+	                    p_min = p_k;
+	                } else{
+	                    //r_p replaces r_max
+	                    rp_max = r_p;
+	                    p_max = p_k;
+	                }
+	            }
+
+	            if (!tau_too_large) {
+	                //calculate equiv shear rate
+	                gammap_dot_tr = (tau_bar_tr - tau_bar_k) / G;
+
+	                //calculate state
+	                CalcState(gammap_dot_tr, p_k, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+	                //calculate residual
+	                r_rt = tau_bar_k - (mu + beta) * p_k;
+
+	                //check sign of residual
+	                if (r_rt * rt_min > 0) {
+	                    rt_min = r_rt;
+	                    tau_min = tau_bar_k;
+	                } else {
+	                    rt_max = r_rt;
+	                    tau_max = tau_bar_k;
+	                }
+	            }
+
+		        gammap_dot_tr = (tau_bar_tr - tau_bar_k) / G;
+		        CalcState(gammap_dot_tr, p_k, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+		        phi_eq_final = phi_m / ( 1 + a * I_m_tr);
+
+		        if ((phi >= phi_m) || (phi >= phi_eq_final)) 
+		        {
+		            p = p_k;
+		            tau_bar = tau_bar_k;
+		            is_solved = true;
+		        }
+		    }
+		}
+	}
+
+	// calculate maximum P for f1 & f3 condition
+	if (!is_solved){
+
+		gammap_dot_tr = tau_bar_tr / G;
+
+		p_zero_strength_f1f3 = (pow(a,2)*pow(phi,2)*(pow(gammap_dot_tr,2)*pow(grains_d,2)*grains_rho + 2*eta*gammap_dot_tr))/pow((phi-phi_m),2);
+
+	}
+
+	// check f1&f3 condition
+	if (!is_solved){
+		// initial residual
+		tau_bar_k = 0.0;
+		p_k    = 0.0;
 		r_rt   = tau_bar_tr;
 		b_rt   = r_rt;
 
@@ -483,118 +624,43 @@ inline void MPM_PARTICLE::Granular(Matrix3d& de, Matrix3d& dw)
 
 		// initilize bisection
 		gammap_dot_tr = 0.0;
-		CalcState(gammap_dot_tr, p_tr,eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+		CalcState(gammap_dot_tr, p_tr, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
 		rt_max = tau_max - (mu + beta)*p_tr;
 
 		gammap_dot_tr = tau_bar_tr/G;
-		CalcState(gammap_dot_tr, p_zero_strength_f1, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
-		rt_min = tau_min - (mu + beta)*p_zero_strength_f1;
+		CalcState(gammap_dot_tr, p_zero_strength_f1f3, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+		rt_min = tau_min - (mu + beta)*p_zero_strength_f1f3;
 
-		if (rt_max*rt_min>0)
-		{
-			cout << "ERROR: f1 residuals in binary search have same sign! That's bad!" << endl;
-			abort();
+		k = 0;
+		while ( abs(r_rt) > ABS_TOL && abs(r_rt) / abs(b_rt) > REL_TOL ){
+			k += 1;
+			if ( k>50 ){
+				break;
+			}
+
+			tau_bar_k = 0.5 * (tau_max + tau_min);
+
+			gammap_dot_tr = (tau_bar_tr - tau_bar_k)/G;
+
+		    p_k = (pow(a,2)*pow(phi,2)*(pow(gammap_dot_tr,2)*pow(grains_d,2)*grains_rho + 2*eta*gammap_dot_tr))/pow((phi-phi_m),2);
+
+			CalcState(gammap_dot_tr, p_k, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
+
+			r_rt = tau_bar_k - (mu + beta)*p_k;
+
+			if (r_rt * rt_min > 0)
+			{
+				rt_min  = r_rt;
+				tau_min = tau_bar_k;
+			}else{
+				rt_max  = r_rt;
+				tau_max = tau_bar_k;
+			}
 		}
 
-		tau_too_large = false;
-		k = 0;
-
-        while (abs(r_rt) > abs(b_rt)*REL_TOL && abs(r_rt) > ABS_TOL){
-        	k += 1;
-        	if (k > 50){
-        		break;
-        	}
-
-            beta = phi - phi_m; //high pressure limit
-            r_p  = max(abs(p_tr), abs( p_tr + (K * tau_bar_tr / G)*beta)); //reference
-            b_p  = r_p;
-
-            //set tau_bar_k
-            tau_bar_k = 0.5 * (tau_max + tau_min);
-
-            //calculate gammap_dot for tau going to zero
-            gammap_dot_tr = (tau_bar_tr - tau_bar_k) / G;
-
-            //calculate state for p_max
-            CalcState(gammap_dot_tr, p_max, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
-
-            //calculate residual for p_max
-            rp_max = p_max - p_tr - K * beta * gammap_dot_tr;
-
-            //calculate state for p_min
-            CalcState(gammap_dot_tr, p_min, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
-
-            //calculate residual for r_min
-            rp_min = p_min - p_tr - K * beta * gammap_dot_tr;
-
-            tau_too_large = false;
-            if (rp_min * rp_max > 0) 
-            {
-                tau_max = tau_bar_k;
-                tau_too_large = true;
-                r_p = 0;            
-            }
-
-            // bisection method
-            j = 0;
-            while (std::abs(r_p) > ABS_TOL and std::abs(r_p) / std::abs(b_p) > REL_TOL) {
-                j += 1;
-                if (j > 50){
-                	break;
-                }
-
-                //binary search
-                p_k = 0.5 * (p_max + p_min);
-
-                //calculate state for step
-                CalcState(gammap_dot_tr, p_k, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
-
-                //calculate residual
-                r_p = p_k - p_tr - K * beta * gammap_dot_tr;
-
-                //check residual sign
-                if (r_p * rp_min > 0) {
-                    //r_p replaces r_min
-                    rp_min = r_p;
-                    p_min = p_k;
-                } else{
-                    //r_p replaces r_max
-                    rp_max = r_p;
-                    p_max = p_k;
-                }
-            }
-
-            if (!tau_too_large) {
-                //calculate equiv shear rate
-                gammap_dot_tr = (tau_bar_tr - tau_bar_k) / G;
-
-                //calculate state
-                CalcState(gammap_dot_tr, p_k, eta, phi, I_tr, I_v_tr, I_m_tr, mu, phi_eq, beta);
-
-                //calculate residual
-                r_rt = tau_bar_k - (mu + beta) * p_k;
-
-                //check sign of residual
-                if (r_rt * rt_min > 0) {
-                    rt_min = r_rt;
-                    tau_min = tau_bar_k;
-                } else {
-                    rt_max = r_rt;
-                    tau_max = tau_bar_k;
-                }
-            }
-        }
-
-        gammap_dot_tr = (tau_bar_tr - tau_bar_k) / G;
-
-        phi_eq_final = phi_m / (1 + a*I_m_tr);
-
-        if ((phi >= phi_m) || ( phi >= phi_eq_final) ) {
-        	p = p_k;
-            tau_bar = tau_bar_k;
-            is_solved = true;
-        }
-
+        p = p_k;
+        tau_bar = tau_bar_k;
+        is_solved = true;
 	}
 
 	// update stress

@@ -19,8 +19,8 @@ int main(int argc, char const *argv[])
 	// Physcial parameters of particles
 	double RhosPhysical 	= 2600;			    // Physical density, unit [kg/m^3]
 	double RhosDiaPhysical  = 225e-6;           // Diameter [m]
-	Vector3d GPhysical (0., -9.8, 0.);			// Body force [m^2/s]
-	double YoungPhysical 	= 1.5e7;			// Young's modus, unit [kg/(m*s^2)] (or Pa)
+	Vector3d GPhysical (0., -9.8, 0.);			// Body force
+	double YoungPhysical 	= 7.5e7;			// Young's modus, unit [kg/(m*s^2)] (or Pa)
 	double PoissonPhysical  = 0.3;				// Possion ratio
 
 	// Space time and mass step
@@ -35,28 +35,28 @@ int main(int argc, char const *argv[])
 	double Young 	= YoungPhysical*dx*dt*dt;
 	double Poisson 	= PoissonPhysical;
 	double Kcoe     = Poisson/(1 - Poisson);
-	double Rhos_Poro= 0.43;
+	double Poro     = 0.5;
 	// double Phi      = 0.6;
 	// Start point of the box for generating particles
 	Vector3d x0 (1,   1,  0);
 	// demention of the box
-	Vector3d l0 (39, 74,  0);
-	x->Nproc = 20;
+	Vector3d l0 (19, 19,  0);
+	x->Nproc = 1;
 	x->Dc = 0.0;
 	// Generate a box of particles
 	x->AddBoxParticles(-1, x0, l0, Ratio, Rhos);
 	// Define gravity and parameters
 	for (size_t p=0; p<x->Lp.size(); ++p)
 	{
-		x->Lp[p]->SetGranular(Young, Poisson, Rhos, Rhos_Dia, Rhos_Poro);
+		x->Lp[p]->SetGranular(Young, Poisson, Rhos, Rhos_Dia, Poro);
 		x->Lp[p]->B  = G;
 	}
 	// // set initial stress
 	for (size_t p=0; p<x->Lp.size(); ++p)
 	{
-		x->Lp[p]->Stress(1,1) = Rhos*G(1)*(75 - x->Lp[p]->X(1));
+		x->Lp[p]->Stress(1,1) = Rhos*G(1)*(20 - x->Lp[p]->X(1));
 		x->Lp[p]->Stress(0,0) = Kcoe*x->Lp[p]->Stress(1,1);
-		cout << x->Lp[p]->Stress << endl;
+		// cout << x->Lp[p]->Stress << endl;
 	}
 
 	x->SetNonSlippingBC(0,0,0);
@@ -81,15 +81,13 @@ int main(int argc, char const *argv[])
 		x->SetSlippingBC(i, j, 0, norm);
 	}
 	// Solve
-	for (int step = 0; step <= 50000; ++step)
+	for (int step = 0; step <= 1; ++step)
 	{
-		if (step % 1000 == 0) // output the file per 100 times
+		if (step % 1 == 0) // output the file per 100 times
 		{
 			cout<<"step == "<<step<<endl;
-			x->WriteFileH5(step);
-			cout<<x->Lp[1500]->X.transpose()<< endl;
-			cout<<"Solid Fraction == "<<1 - x->Lp[1500]->Poro<<endl;
 			cout<<"=============="<<endl;
+			x->WriteFileH5(step);
 		}
 
 		x->ParticleToNode();

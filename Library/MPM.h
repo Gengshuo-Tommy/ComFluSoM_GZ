@@ -299,9 +299,10 @@ void MPM::ParticleToNodePoro()
    for (size_t p=0; p<Lp.size(); ++p)
    {
    	CalNGN(Lp[p]);
+   	double   poro = Lp[p]->Poro;
     	Matrix3d vsp  = -Lp[p]->Vol*Lp[p]->Stress;
-		Vector3d fex  = (1-Lp[p]->Poro)*Lp[p]->Rhos*Lp[p]->Vol*Lp[p]->B + Lp[p]->Fh;
-		double   pex  = (1-Lp[p]->Poro)*Lp[p]->Vol*Lp[p]->P;
+		Vector3d fex  = (1-poro)*Lp[p]->Rhos*Lp[p]->Vol*Lp[p]->B + Lp[p]->Fh;
+		double   pex  = (1-poro)*Lp[p]->Vol*Lp[p]->P;
 
 		for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
 		{
@@ -342,18 +343,19 @@ void MPM::ParticleToNodePoro()
 					Ln[id]->Stress(d,c) += nm*Lp[p]->Stress(d,c);
 				}
 			}
-
-			#pragma omp parallel for schedule(static) num_threads(Nproc)
-			for (size_t p=0; p<Lp.size(); ++p)
-			{
-				for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
-				{
-					size_t id = Lp[p]->Lni[l];
-					Ln[id]->Poro = Ln[id]->Mp/Ln[id]->M;
-				}
-			}
 		}
    }
+
+	#pragma omp parallel for schedule(static) num_threads(Nproc)
+	for (size_t p=0; p<Lp.size(); ++p)
+	{
+		for (size_t l=0; l<Lp[p]->Lni.size(); ++l)
+		{	
+			size_t id = Lp[p]->Lni[l];
+			Ln[id]->Poro = Ln[id]->Mp/Ln[id]->M;
+		}
+	}
+
    UpdateLAn();
 }
 

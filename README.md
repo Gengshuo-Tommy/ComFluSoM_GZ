@@ -2,6 +2,8 @@
 - TComFLuSoM is a modified version of ComFluSoM on github for a PhD candidate's project.
 - For the original codes with all different numerical methods please refer to https://github.com/peizhang-cn/ComFluSoM.
 - For more information, please contact https://www.linkedin.com/in/gengshuo-zhang-0a9b95119/.
+- Data is stored in h5.file for visluization in Visit.
+- Matlab codes with more specific data analysis will be uploaded soon.
 
 # Methods
 - Material point method (MPM) for solid phase

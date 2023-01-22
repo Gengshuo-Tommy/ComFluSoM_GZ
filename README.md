@@ -1,3 +1,5 @@
+Note: The project is under review after the PhD thesis is submitted. The updated version will be published in Feb 2023.
+
 # TComFluSoM
 - TComFLuSoM is a modified version of ComFluSoM on github for a PhD candidate's project.
 - For the original codes with all different numerical methods please refer to https://github.com/peizhang-cn/ComFluSoM.

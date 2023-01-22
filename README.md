@@ -1,4 +1,4 @@
-Note: The project is under review after the PhD thesis is submitted. The updated version will be published in Feb 2023.
+Note: The project is now under review after the PhD thesis is submitted. The updated version will be published in Feb 2023. The author is reviewing the numerical codes and adding comments before that.
 
 # TComFluSoM
 - TComFLuSoM is a modified version of ComFluSoM on github for a PhD candidate's project.
